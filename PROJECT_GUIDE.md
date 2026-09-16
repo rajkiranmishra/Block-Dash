@@ -6,15 +6,18 @@
 
 ## Table of Contents
 1. [Core Philosophy & Architecture](#1-core-philosophy--architecture)
-2. [Delta-Time & The Game Loop System](#2-delta-time--the-game-loop-system)
-3. [Player Jump & Constant Acceleration Physics](#3-player-jump--constant-acceleration-physics)
-4. [AABB Collision Detection & Hitbox Padding](#4-aabb-collision-detection--hitbox-padding)
-5. [Constraint-Aware Procedural Generation & Reachability Math](#5-constraint-aware-procedural-generation--reachability-math)
-6. [Dynamic Difficulty Scaling Curves](#6-dynamic-difficulty-scaling-curves)
-7. [Context-Aware Roast & Meme Criticism Engine](#7-context-aware-roast--meme-criticism-engine)
-8. [Supabase Identity, Leaderboards & Row Level Security (RLS)](#8-supabase-identity-leaderboards--row-level-security-rls)
-9. [Zero-Dependency Web Audio API Sound Synthesizer](#9-zero-dependency-web-audio-api-sound-synthesizer)
-10. [VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)](#10-viva-questions--technical-answers-professor-mode)
+2. [Run Reset System & Lifecycle Purity (Retry Bug Resolution)](#2-run-reset-system--lifecycle-purity-retry-bug-resolution)
+3. [Delta-Time & The Game Loop System](#3-delta-time--the-game-loop-system)
+4. [Player Jump & Constant Acceleration Physics](#4-player-jump--constant-acceleration-physics)
+5. [Block Squash / Slide Mechanic & Safe Expansion](#5-block-squash--slide-mechanic--safe-expansion)
+6. [Dash Mechanic, Kinematics & Cooldown Balancing](#6-dash-mechanic-kinematics--cooldown-balancing)
+7. [Mid-Air Obstacles & Multi-Mechanic Procedural Generation](#7-mid-air-obstacles--multi-mechanic-procedural-generation)
+8. [AABB Collision Detection & Hitbox Padding](#8-aabb-collision-detection--hitbox-padding)
+9. [Decoupled Action Input Architecture](#9-decoupled-action-input-architecture)
+10. [Context-Aware Roast & Meme Criticism Engine](#10-context-aware-roast--meme-criticism-engine)
+11. [Supabase Identity, Leaderboards & Row Level Security (RLS)](#11-supabase-identity-leaderboards--row-level-security-rls)
+12. [Zero-Dependency Web Audio API Sound Synthesizer](#12-zero-dependency-web-audio-api-sound-synthesizer)
+13. [VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)](#13-viva-questions--technical-answers-professor-mode)
 
 ---
 
@@ -23,7 +26,13 @@
 ```
                     ┌────────────────────────────┐
                     │      PLAYER INPUT          │
-                    │ (Space / Tap / Click / R)  │
+                    │ Jump / Squash / Dash / R   │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │    ACTION INPUT MANAGER    │
+                    │ Maps Keys/Touch to Actions │
                     └─────────────┬──────────────┘
                                   │
                                   ▼
@@ -37,8 +46,8 @@
 ┌──────────────┐          ┌──────────────┐          ┌──────────────┐
 │ DELTA-TIME   │          │ PROCEDURAL   │          │ AABB COLLIDE │
 │ PHYSICS      │          │ GENERATOR    │          │ & PARTICLES  │
-│ vy += g * dt │          │ Jump Math &  │          │ Forgiving    │
-│ y += vy * dt │          │ Safe Gaps    │          │ Coyote Margin│
+│ Jump, Squash │          │ Mid-Air Bars │          │ Forgiving    │
+│ & Dash Burst │          │ Multi-Actions│          │ Coyote Margin│
 └───────┬──────┘          └───────┬──────┘          └───────┬──────┘
         │                         │                         │
         └─────────────────────────┼─────────────────────────┘
@@ -49,226 +58,234 @@
                     └────────────────────────────┘
 ```
 
-The game is designed with **zero runtime overhead**, using pure vanilla HTML5, CSS3, and ES6 JavaScript. This eliminates framework bloat, guarantees 120+ FPS canvas rendering across all modern displays, and makes every mathematical equation transparent.
+The game is designed with **zero runtime overhead**, using pure vanilla HTML5, CSS3, and ES6 JavaScript.
 
 ---
 
-## 2. Delta-Time & The Game Loop System
+## 2. Run Reset System & Lifecycle Purity (Retry Bug Resolution)
+
+### Root Cause of the Previous Retry Bug
+When a player died and pressed **RETRY** (or <kbd>SPACE</kbd> / <kbd>R</kbd>), the state machine transitioned from `DEAD` directly to `PLAYING` without executing a complete world reset.
+- As a result:
+  1. `this.obstacles` was not cleared, leaving existing hazards right at the player's position.
+  2. `this.distance` and `this.score` were not zeroed.
+  3. `this.currentSpeed` was not restored to `CONFIG.SPEED.INITIAL`, trapping the player in high late-game velocities.
+  4. `this.nextSpawnX` remained offset, creating broken or instant obstacle collisions.
+
+### Centralized Resolution: `resetRun()` & `startNewRun()`
+We established a strict per-run reset boundary:
+
+```javascript
+resetRun() {
+  // 1. Reset Player Physics & Dimensions
+  this.player.x = CONFIG.PLAYER.START_X;
+  this.player.w = CONFIG.PLAYER.WIDTH;
+  this.player.h = CONFIG.PLAYER.HEIGHT;
+  this.player.y = this.groundY - CONFIG.PLAYER.HEIGHT;
+  this.player.vy = 0;
+  this.player.rotation = 0;
+  this.player.isGrounded = true;
+  this.player.isSquashing = false;
+  this.player.wantsToUnsquash = false;
+  this.player.isDashing = false;
+  this.player.dashTimer = 0;
+  this.player.dashCooldownTimer = 0;
+  this.player.trail = [];
+
+  // 2. Clear Active Entities
+  this.obstacles = [];
+  this.particles = [];
+  this.groundOffset = 0;
+  this.nextSpawnX = this.virtualWidth + 140;
+
+  // 3. Reset Run Telemetry
+  this.score = 0;
+  this.distance = 0;
+  this.survivalTime = 0;
+  this.obstacleCounter = 0;
+  this.currentSpeed = CONFIG.SPEED.INITIAL;
+}
+```
+
+Whenever entering `PLAYING` from `MENU`, `READY`, or `DEAD`, `startNewRun()` is executed unconditionally, guaranteeing 100% state purity.
+
+---
+
+## 3. Delta-Time & The Game Loop System
 
 ### Purpose
-To ensure that gameplay, player physics, and obstacle scrolling run at the **exact same physical speed** regardless of whether the user plays on a 60 Hz, 90 Hz, 120 Hz, or 144 Hz display.
+To guarantee that movement, jumping, squashing, and dashing behave identically across 60Hz, 90Hz, 120Hz, and 144Hz displays.
 
-### Relevant File & Functions
-- **File**: [`js/game.js`](file:///Users/rajkiranmishra/Block-Dash/js/game.js)
-- **Functions**: `loop(currentTime)`, `update(dt)`
-
-### Algorithm & Formula
+### Formula
 $$\Delta t = \min\left(\frac{t_{\text{current}} - t_{\text{last}}}{1000}, 0.1\right)$$
 
-- We measure elapsed time since the previous frame in seconds.
-- We **clamp** $\Delta t$ to a maximum of $0.1\text{s}$ (100ms) to prevent the *"Spiral of Death"* — an issue where switching browser tabs causes a massive $\Delta t$ surge, teleporting the player directly through the floor or into obstacles.
+---
 
-### Why Not `setInterval` or `setTimeout`?
-- `setInterval` is bound to the JavaScript event loop and timer resolution, leading to stutter, dropped frames, and unsynchronized screen refreshes.
-- `requestAnimationFrame` tells the browser to execute the update immediately before the next display V-Sync refresh cycle, saving battery and eliminating screen tearing.
+## 4. Player Jump & Constant Acceleration Physics
+
+- Gravitational Acceleration: $g = 2100\,\text{px/s}^2$
+- Jump Impulse: $v_{\text{jump}} = -780\,\text{px/s}$
+- Peak Rise Time: $t_{\text{rise}} = \frac{|v_{\text{jump}}|}{g} \approx 0.3714\,\text{s}$
+- Max Jump Height: $h_{\text{max}} = \frac{v_{\text{jump}}^2}{2g} \approx 144.86\,\text{px}$
+- Total Air Time: $t_{\text{air}} = 2 \cdot t_{\text{rise}} \approx 0.7429\,\text{s}$
 
 ---
 
-## 3. Player Jump & Constant Acceleration Physics
+## 5. Block Squash / Slide Mechanic & Safe Expansion
 
-### Purpose
-Simulates gravity and instantaneous vertical impulse to produce a snappy, satisfying parabolic jump arc.
+### Hitbox Modification & Ground Anchoring
+When squashing (<kbd>S</kbd>, <kbd>↓</kbd>, or lower touch screen):
+- Height compresses from $40\text{px}$ to $20\text{px}$ ($50\%$ reduction).
+- Width widens from $40\text{px}$ to $50\text{px}$ for tactile physical weight.
+- **Ground Anchoring Math**:
+  $$y = y_{\text{ground}} - h_{\text{squash}} = 460 - 20 = 440\,\text{px}$$
+  The bottom edge ($y + h = 460\,\text{px}$) remains firmly pinned to the ground surface.
 
-### Relevant File & Functions
-- **File**: [`js/game.js`](file:///Users/rajkiranmishra/Block-Dash/js/game.js), [`js/config.js`](file:///Users/rajkiranmishra/Block-Dash/js/config.js)
-- **Functions**: `triggerJump()`, `update(dt)`
-
-### Physical Equations of Motion (Euler Integration)
-$$v_y(t + \Delta t) = \min(v_y(t) + g \cdot \Delta t, v_{\text{terminal}})$$
-$$y(t + \Delta t) = y(t) + v_y(t) \cdot \Delta t$$
-
-Where:
-- $g = 2100\,\text{px/s}^2$ (Gravitational Acceleration)
-- $v_{\text{jump}} = -780\,\text{px/s}$ (Upward Jump Impulse)
-- $v_{\text{terminal}} = 1200\,\text{px/s}$ (Terminal Velocity)
-
-### Key Mathematical Derivations
-1. **Rise Time to Peak**:
-   $$t_{\text{rise}} = \frac{|v_{\text{jump}}|}{g} = \frac{780}{2100} \approx 0.3714\,\text{s}$$
-2. **Maximum Jump Height ($h_{\text{max}}$)**:
-   $$h_{\text{max}} = \frac{v_{\text{jump}}^2}{2g} = \frac{780^2}{2 \times 2100} = \frac{608400}{4200} \approx 144.86\,\text{px}$$
-3. **Total Air Time ($t_{\text{air}}$)**:
-   $$t_{\text{air}} = 2 \times t_{\text{rise}} \approx 0.7429\,\text{s}$$
+### Safe Uncrouch / Expansion Check (Anti-Clipping)
+If the player releases the squash key while still sliding beneath a floating laser bar:
+1. `hasOverheadObstacle()` tests if a $40\text{px}$ tall box at the current X position would intersect any active obstacle.
+2. If blocked, `player.wantsToUnsquash = true` keeps the block squashed.
+3. The instant the overhead hazard scrolls past, the block smoothly expands to full size without clipping.
 
 ---
 
-## 4. AABB Collision Detection & Hitbox Padding
+## 6. Dash Mechanic, Kinematics & Cooldown Balancing
 
-### Purpose
-To detect physical overlap between the player cube and ground hazards with maximum computational efficiency.
+### Physics & Delta-Time Integration
+Dash provides a brief, controlled forward acceleration burst:
+- Duration: $t_{\text{dash}} = 0.22\,\text{s}$
+- Speed Multiplier: $1.85\times$
+- Cooldown: $t_{\text{cooldown}} = 1.2\,\text{s}$
 
-### Relevant File & Functions
-- **File**: [`js/game.js`](file:///Users/rajkiranmishra/Block-Dash/js/game.js)
-- **Function**: `checkCollisions()`
+$$\text{Effective Speed} = \begin{cases} v_{\text{current}} \cdot 1.85 & \text{if dashing} \\ v_{\text{current}} & \text{otherwise} \end{cases}$$
 
-### How AABB (Axis-Aligned Bounding Box) Works
-Two rectangles $A$ and $B$ overlap if and only if they overlap on both the X-axis and Y-axis simultaneously:
+$$\Delta x = \text{Effective Speed} \cdot \Delta t$$
+
+### Visual & Audio Feedback
+- Neon cyan motion trail during dash.
+- Forward horizontal stretch ($w \to 50\text{px}$).
+- Jet particle exhaust.
+- Cooldown meter on HUD with glowing ready state and chirp audio cue.
+
+---
+
+## 7. Mid-Air Obstacles & Multi-Mechanic Procedural Generation
+
+### Obstacle Families
+1. **Ground Spikes & Blocks**: Require **JUMP**.
+2. **Floating Laser Bars & Crosses**: Suspended at $y=400$ ($38\text{px}$ ground clearance). Requires **SQUASH** ($h=20\text{px}$).
+3. **Energy Gates & Wide Pits**: Require **DASH** or **JUMP + DASH**.
+
+### Progressive Difficulty Pacing
+- **Score 0 – 350 (Phase 1)**: Ground Hazards only $\to$ Teaches Jump.
+- **Score 350 – 900 (Phase 2)**: Introduces Floating Bars and Crosses $\to$ Teaches Squash.
+- **Score 900 – 1800 (Phase 3)**: Introduces Energy Gates $\to$ Teaches Dash.
+- **Score 1800+ (Phase 4)**: High-Tension Multi-Mechanic Chains (Jump $\to$ Squash $\to$ Dash).
+
+---
+
+## 8. AABB Collision Detection & Hitbox Padding
+
 $$\text{Overlap} \iff (A_x < B_x + B_w) \land (A_x + A_w > B_x) \land (A_y < B_y + B_h) \land (A_y + A_h > B_y)$$
 
-### The "Coyote Margin" / Hitbox Inset
-Standard pixel-exact bounding boxes feel unfair to players because human visual perception perceives clipping the outer edge of a corner as a "near-miss" rather than a true collision.
-- We apply an **inward hitbox padding** ($4\text{px}$ on the player, $6\text{px}$ on triangular spikes).
-- This ensures close calls feel thrilling and fair, while genuine mistakes remain fatal.
+With $4\text{px}$ inward coyote padding on the player and $6\text{px}$ on triangular hazards.
 
 ---
 
-## 5. Constraint-Aware Procedural Generation & Reachability Math
+## 9. Decoupled Action Input Architecture
 
-### Purpose
-To generate endless, non-repeating obstacle combinations while ensuring that **every single jump is mathematically possible**.
-
-### Philosophy
-> *"The game is allowed to hate you. The game is not allowed to cheat."*
-
-### Reachability Formula
-At scrolling speed $v_{\text{speed}}$, the player's maximum horizontal distance traversed during a single jump is:
-$$D_{\text{reach}} = v_{\text{speed}} \cdot t_{\text{air}}$$
-
-The **Minimum Safe Gap** between two consecutive hazards is:
-$$\text{MinSafeGap} = (v_{\text{speed}} \cdot t_{\text{air}} \cdot 0.72) + w_{\text{player}} + \text{SafetyBuffer}$$
-
-If the generator randomly selects a pattern, it guarantees that the distance to the next hazard is never less than $\text{MinSafeGap}$.
-
----
-
-## 6. Dynamic Difficulty Scaling Curves
-
-### Speed Acceleration Formula
-Rather than unbounded linear growth, speed scales smoothly using an exponential decay curve:
-$$v(s) = v_{\text{initial}} + (v_{\text{max}} - v_{\text{initial}}) \cdot \left(1 - e^{-s / 3200}\right)$$
-
-Where $s$ is the player's current score.
-
+Physical hardware events are decoupled from gameplay logic via an Action Layer:
 ```
-Speed (px/s)
- 760 ┼──────────────────────────────────── MAX SPEED
-     │                              ╭─────
-     │                        ╭─────
-     │                  ╭─────
- 380 ┼────────────╭─────                   INITIAL SPEED
-     └────────────┬─────────────┬─────────► Score
-     0           1000          3000
+Keyboard (Space, W, Up)   ──┐
+Mouse (Left Click)        ──┼──► Action: JUMP
+Mobile (Upper Touch Zone) ──┘
+
+Keyboard (S, Down)        ──┐
+Mobile (Lower Touch Zone) ──┴──► Action: SQUASH (Held)
+
+Keyboard (Shift, X)       ──┐
+Mobile (Right Touch Zone) ──┴──► Action: DASH (Triggered)
 ```
 
 ---
 
-## 7. Context-Aware Roast & Meme Criticism Engine
+## 10. Context-Aware Roast & Meme Criticism Engine
 
-### Purpose
-To replace generic "Game Over" screens with a sarcastic, context-aware AI critique of the player's specific failure.
-
-### Relevant File
-- **File**: [`js/roast.js`](file:///Users/rajkiranmishra/Block-Dash/js/roast.js)
-
-### Classification Decision Tree
-```
-                         ┌───────────────────────┐
-                         │      PLAYER DIES      │
-                         └───────────┬───────────┘
-                                     │
-                 ┌───────────────────┴───────────────────┐
-                 ▼                                       ▼
-        Is score > PB?                         survivalTime < 1.8s?
-         ├── YES ──► [NEW_PB]                   ├── YES ──► [INSTANT_DEATH]
-         └── NO                                 └── NO
-                 │                                       │
-                 ▼                                       ▼
-        score >= 0.94 * PB?                    obstacleIndex <= 1?
-         ├── YES ──► [ALMOST_PB]                ├── YES ──► [FIRST_OBSTACLE]
-         └── NO                                 └── NO
-                 │                                       │
-                 ▼                                       ▼
-        killCount(type) >= 4?                  consecutiveFastDeaths >= 3?
-         ├── YES ──► [REPEAT_FAILURE]           ├── YES ──► [RAGE_STREAK]
-         └── NO ──► [NORMAL_DEATH]              └── NO ──► [NORMAL_DEATH]
-```
-
-### Anti-Repetition Buffer
-An LRU (Least Recently Used) queue tracks the last 12 roast IDs. When selecting a line from a category pool, recently shown lines are filtered out to ensure variety across rapid retries.
+Analyzes telemetry to categorize deaths:
+- `FAILED_TO_SQUASH`: Hit by floating laser without squashing.
+- `DASHED_INTO_OBSTACLE`: Died while `isDashing === true`.
+- `FIRST_OBSTACLE`: Died on obstacle #1.
+- `REPEAT_FAILURE`: 4+ deaths to the same obstacle type.
+- `ALMOST_PB`: Reached within $94\%$ of PB.
 
 ---
 
-## 8. Supabase Identity, Leaderboards & Row Level Security (RLS)
+## 11. Supabase Identity, Leaderboards & Row Level Security (RLS)
 
-### Authentication & Storage
-- **Anonymous Authentication**: `supabase.auth.signInAnonymously()` creates a persistent UUID in browser `localStorage` without requiring email passwords.
-- **Row Level Security (RLS)**: Enforces that players can only `INSERT` and `UPDATE` records where `auth.uid() = user_id`.
-
-### Anti-Cheat Strategy & Heuristics
-1. **Frontend Sanity Check**: `score <= survivalTime * 120 + 200`. Discards artificially injected memory scores.
-2. **PostgreSQL Check Constraints**: Validates score ranges and sanitizes display names to alphanumeric callsigns.
-3. **Graceful Degradation**: If Supabase is unconfigured or the network drops, the game switches seamlessly to `localStorage` without error.
+- Anonymous authentication via `supabase.auth.signInAnonymously()`.
+- RLS policy: users can only write to rows where `auth.uid() = user_id`.
+- Anti-cheat sanity check: `score <= survivalTime * 120 + 200`.
 
 ---
 
-## 9. Zero-Dependency Web Audio API Sound Synthesizer
+## 12. Zero-Dependency Web Audio API Sound Synthesizer
 
-### Purpose
-Generates procedural sound waves in real-time via the browser's native `AudioContext`.
-
-### Why This Beats Static Audio Files:
-1. **Zero Asset 404s**: No missing `.mp3` or `.wav` network errors.
-2. **Zero Audio Latency**: Synthesized instantaneously without decoding lag.
-3. **Dynamic Pitch Modulation**: Frequencies can slide dynamically based on gameplay velocity.
-
----
-
-## 10. VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)
-
-### Q1: What is `requestAnimationFrame`, and why is it superior to `setInterval`?
-- **Simple Answer**: `requestAnimationFrame` tells the browser to update the screen right before drawing the next frame, making the game smooth and saving battery.
-- **Technical Answer**: `requestAnimationFrame` synchronizes the game loop with the display's native refresh rate (V-Sync). Unlike `setInterval`, which fires on a crude timer regardless of display hardware and can cause dropped frames or stutter, `rAF` automatically pauses when the tab is minimized, preventing background CPU exhaustion and memory buildup.
+Native Web Audio API oscillators synthesize:
+- `playJump()`: Upward square frequency sweep (180Hz $\to$ 480Hz).
+- `playLand()`: Low-frequency sine thud (90Hz $\to$ 30Hz).
+- `playSquash()`: Downward friction slide whoosh (220Hz $\to$ 80Hz).
+- `playDash()`: Sonic bandpass noise jet burst + pitch sweep.
+- `playDashReady()`: High-pitch harmonic chirp.
+- `playDeath()`: White-noise explosion + bitcrush crunch.
 
 ---
 
-### Q2: Why is Delta-Time necessary in game physics?
-- **Simple Answer**: Without delta-time, the game runs twice as fast on a 120 Hz monitor as it does on a 60 Hz monitor.
-- **Technical Answer**: Delta-time ($\Delta t$) is the elapsed time between the current frame and the previous frame in seconds. By multiplying acceleration and velocity by $\Delta t$, we convert per-frame calculations into time-integrated physical units ($\text{pixels}/\text{second}$ and $\text{pixels}/\text{second}^2$), making movement completely frame-rate independent.
+## 13. VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)
+
+### Q1: Why did Retry previously resume near the death position?
+- **Simple Answer**: The retry button changed the game state to Playing but forgot to reset the obstacle list, speed, score, and player position.
+- **Technical Answer**: The FSM transitioned from `DEAD` to `PLAYING` without executing the per-run state reinitialization routine (`resetRun()`). As a result, the `obstacles` array, `distance`, `currentSpeed`, and `nextSpawnX` retained their end-of-run values, causing the player to immediately collide with active hazards at high speeds.
 
 ---
 
-### Q3: How does AABB collision detection work, and what is its computational complexity?
-- **Simple Answer**: It checks if two non-rotated boxes overlap horizontally and vertically.
-- **Technical Answer**: Axis-Aligned Bounding Box (AABB) checks four planar inequality conditions:
-  $$A_x < B_x + B_w \land A_x + A_w > B_x \land A_y < B_y + B_h \land A_y + A_h > B_y$$
-  Because our game entities are aligned with the coordinate axes (no free-form polygon rotations on hitboxes), this runs in $O(1)$ constant time per obstacle, and $O(N)$ for $N$ on-screen obstacles.
+### Q2: What variables must be reset between game runs vs. persisted?
+- **Simple Answer**: The player position, speed, score, obstacles, and particles must reset. Personal best, username, audio preferences, and global ranking must stay saved.
+- **Technical Answer**: Per-run transient state ($x, y, v_y, \text{isSquashing}, \text{isDashing}, \text{score}, \text{speed}, \text{obstacles}, \text{particles}$) must be re-instantiated. Persistent session state ($\text{personalBest}, \text{playerName}, \text{audioMuteState}, \text{sessionAttempts}, \text{authToken}$) is stored in closure memory and `localStorage` and must never be cleared across runs.
 
 ---
 
-### Q4: How do you mathematically guarantee that procedural obstacle generation never creates an impossible jump?
-- **Simple Answer**: We calculate how high and far the cube can jump, and make sure the gap between hazards is always larger than the minimum landing space.
-- **Technical Answer**: We solve the kinematic trajectory equations for our constant gravity model ($g$) and jump impulse ($v_0$). Air time is $t_{\text{air}} = \frac{2|v_0|}{g}$. Horizontal reach is $D = v_{\text{speed}} \cdot t_{\text{air}}$. The procedural generator enforces that the spacing between consecutive obstacles $S \ge D \times 0.72 + w_{\text{player}} + \text{Buffer}$. Any generated pattern that violates this inequality is rejected before spawning.
+### Q3: How does the Squash hitbox work, and why is the bottom of the player anchored?
+- **Simple Answer**: When you squash, the cube gets cut in half from the top down so its feet stay on the floor.
+- **Technical Answer**: The player's bounding box height is reduced from $40\text{px}$ to $20\text{px}$. To prevent the player from floating in mid-air, we anchor the Y coordinate to the ground surface: $y = y_{\text{ground}} - h$. The bottom edge $y + h \equiv y_{\text{ground}}$ remains constant, maintaining continuous ground collision contact.
 
 ---
 
-### Q5: Why can't a static website hosted on GitHub Pages maintain a secure global leaderboard by itself?
-- **Simple Answer**: GitHub Pages is purely static hosting (HTML/CSS/JS files) and has no backend server or database to store and verify scores from other players.
-- **Technical Answer**: GitHub Pages serves static client-side files over HTTP with no persistent writeable database or server-side execution environment. To maintain a global leaderboard, clients must communicate with a remote database service (like Supabase PostgreSQL) via authenticated API calls.
+### Q4: How do you prevent the block from expanding inside an obstacle?
+- **Simple Answer**: When you let go of the squash key, the game checks if there is a hazard above your head. If there is, you stay squashed until you slide out from under it.
+- **Technical Answer**: When `endSquash()` fires, `hasOverheadObstacle()` tests a hypothetical full-size AABB ($40\text{px} \times 40\text{px}$) against all active obstacles. If an intersection is detected, `player.wantsToUnsquash = true` defers expansion until the frame where `hasOverheadObstacle() === false`.
 
 ---
 
-### Q6: What is the difference between Authentication and Authorization in Supabase?
-- **Simple Answer**: Authentication proves *who you are*. Authorization decides *what you are allowed to do*.
-- **Technical Answer**: Authentication verifies identity (e.g., generating an anonymous or email JWT token with a unique `auth.uid()`). Authorization is enforced via PostgreSQL Row Level Security (RLS) policies, which evaluate the user's JWT claims to determine whether they have permission to `SELECT`, `INSERT`, `UPDATE`, or `DELETE` specific rows.
+### Q5: How does Dash work, and why does it need a cooldown?
+- **Simple Answer**: Dash gives you a quick speed burst to cross dangerous gaps, but has a cooldown so you cannot spam it to bypass the game.
+- **Technical Answer**: Dash multiplies effective scrolling speed by $1.85\times$ for $0.22\text{s}$ using delta-time integration. A $1.2\text{s}$ cooldown timer prevents trivialization of reaction windows, converting the ability into a high-risk, high-reward tactical choice.
 
 ---
 
-### Q7: Why must the Supabase `service_role` key never appear in frontend code?
-- **Simple Answer**: Because anyone could open DevTools, copy the key, and delete the entire database.
-- **Technical Answer**: The `service_role` key bypasses all PostgreSQL Row Level Security (RLS) policies and grants full superuser administrative access. Frontend JavaScript is completely visible to client browsers; only the public `anon` key (which is restricted by RLS) may be exposed.
+### Q6: How is Dash made independent of monitor refresh rate?
+- **Simple Answer**: We use delta-time timers instead of counting frames.
+- **Technical Answer**: Dash duration and cooldown decrement by $\Delta t$ ($\text{seconds per frame}$) rather than a fixed frame count. At 60Hz ($\Delta t \approx 0.0166\text{s}$) or 144Hz ($\Delta t \approx 0.0069\text{s}$), the physical duration remains exactly $0.22\text{s}$ and $1.2\text{s}$.
 
 ---
 
-### Q8: What is a Finite State Machine (FSM), and why is it cleaner than boolean flags?
-- **Simple Answer**: An FSM ensures the game can only be in one distinct mode at a time (like Playing, Paused, or Dead) instead of having a mess of `isDead`, `isPaused`, `isPlaying` variables.
-- **Technical Answer**: An FSM is a mathematical model of computation consisting of a defined set of discrete states, an initial state, and transition rules. It guarantees state exclusivity ($S \in \{\text{BOOT}, \text{MENU}, \text{READY}, \text{PLAYING}, \text{PAUSED}, \text{DEAD}\}$), eliminating conflicting impossible states (e.g., `isPlaying === true && isDead === true`).
+### Q7: How does procedural generation validate multi-action obstacle combinations?
+- **Simple Answer**: The game calculates the exact distance needed to jump, squash, or dash, and guarantees that consecutive obstacles always leave enough room to react and transition.
+- **Technical Answer**: Kinematic formulas compute minimum spatial separation:
+  $$S_{\text{safe}} = (v_{\text{speed}} \cdot t_{\text{air}} \cdot 0.70) + w_{\text{player}} + \text{Buffer}$$
+  If a pattern introduces an overhead floating bar immediately after a high jump before the player can land ($t < t_{\text{air}}$), the generator rejects the combination via rejection sampling and chooses a valid sequence.
+
+---
+
+### Q8: Why separate hardware keys from gameplay actions in the input system?
+- **Simple Answer**: It allows desktop keys, mouse clicks, and mobile touch buttons to control the same game actions without duplicating code.
+- **Technical Answer**: The Action Pattern establishes an abstraction layer between input sources (Keyboard events, Pointer events, Touch coordinates) and gameplay state handlers (`triggerJump()`, `startSquash()`, `triggerDash()`), allowing seamless cross-platform input mapping and testability.

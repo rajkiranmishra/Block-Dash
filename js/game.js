@@ -3,9 +3,15 @@
  * BLOCK DASH - Core Game Engine
  * "One button. One endless level. No excuses."
  *
- * Handles: Canvas scaling, Delta-Time loop, FSM state transitions,
- *          Verlet/Euler player physics, constraint-aware procedural generation,
- *          AABB collision detection, visual effects, and HUD synchronization.
+ * Systems:
+ * - Centralized Run Lifecycle & Bug-Free Restart System
+ * - Delta-Time Euler Physics & Constant Acceleration Gravity
+ * - Block Squash / Slide with Ground Anchoring & Safe Uncrouch Checks
+ * - Dash Mechanic with Cooldowns, Jet Trails, & Delta-Time Independence
+ * - Mid-Air Obstacles (Floating Bars, Crosses, Energy Gates)
+ * - Constraint-Aware Procedural Generation & Multi-Mechanic Fairness
+ * - AABB Collision Detection with Forgiving Coyote Insets
+ * - Action-Mapped Input System (Keyboard + Mobile Multi-Touch Zones)
  * ==============================================================================
  */
 
@@ -29,9 +35,10 @@ class GameEngine {
     this.canvas = document.getElementById('game-canvas');
     this.ctx = this.canvas.getContext('2d');
     
-    // Internal logical coordinate system
+    // Internal logical coordinate system (16:9)
     this.virtualWidth = CONFIG.CANVAS.WIDTH;
     this.virtualHeight = CONFIG.CANVAS.HEIGHT;
+    this.groundY = CONFIG.CANVAS.GROUND_Y;
     this.scale = 1;
     this.dpr = window.devicePixelRatio || 1;
 
@@ -41,13 +48,14 @@ class GameEngine {
     this.deltaTime = 0;
     this.sessionAttempts = 0;
 
-    // Run Telemetry
+    // Per-Run Telemetry & Metrics
     this.score = 0;
     this.distance = 0;
     this.currentSpeed = CONFIG.SPEED.INITIAL;
     this.survivalTime = 0;
     this.obstacleCounter = 0;
     this.lastKillerType = 'single-spike';
+    this.lastMilestone = 0;
 
     // Player Entity
     this.player = {
@@ -58,15 +66,20 @@ class GameEngine {
       vy: 0,
       rotation: 0,
       isGrounded: true,
+      isSquashing: false,
+      wantsToUnsquash: false,
+      isDashing: false,
+      dashTimer: 0,
+      dashCooldownTimer: 0,
       trail: [],
     };
 
     // World & Environment
-    this.groundY = CONFIG.CANVAS.GROUND_Y;
     this.obstacles = [];
     this.particles = [];
     this.bgStars = [];
     this.groundOffset = 0;
+    this.nextSpawnX = this.virtualWidth + 140;
 
     // Screen Shake
     this.shakeTime = 0;
@@ -78,15 +91,20 @@ class GameEngine {
     this.jumpMaxHeight = (CONFIG.PLAYER.JUMP_FORCE ** 2) / (2 * CONFIG.PLAYER.GRAVITY);
     this.jumpAirTime = 2 * this.jumpRiseTime;
 
-    // Procedural Spawning Anchor
-    this.nextSpawnX = this.virtualWidth + 100;
+    // Input Action Tracker
+    this.inputs = {
+      jump: false,
+      squash: false,
+      dash: false,
+    };
 
-    // DOM UI Elements
+    // DOM UI Elements Cache
     this.dom = {
       hud: document.getElementById('game-hud'),
       hudScore: document.getElementById('hud-score'),
       hudPb: document.getElementById('hud-pb'),
       hudSpeedFill: document.getElementById('hud-speed-fill'),
+      hudDashFill: document.getElementById('hud-dash-fill'),
       menuOverlay: document.getElementById('menu-overlay'),
       readyOverlay: document.getElementById('ready-overlay'),
       pauseOverlay: document.getElementById('pause-overlay'),
@@ -127,8 +145,8 @@ class GameEngine {
       });
     }
 
-    this.bindInputs();
-    this.bindButtons();
+    this.bindActionInputs();
+    this.bindUIButtons();
 
     // Setup initial HUD personal best
     this.dom.hudPb.textContent = leaderboard.getPersonalBest();
@@ -174,17 +192,18 @@ class GameEngine {
     switch (newState) {
       case GameState.MENU:
         this.dom.menuOverlay.classList.remove('hidden');
-        this.resetWorld();
+        this.resetRun();
         break;
 
       case GameState.READY:
         this.dom.readyOverlay.classList.remove('hidden');
         this.dom.hud.classList.remove('hidden');
-        this.resetWorld();
+        this.resetRun();
         break;
 
       case GameState.PLAYING:
         this.dom.hud.classList.remove('hidden');
+        // If starting a fresh run from MENU or DEAD, ensure full clean reset
         break;
 
       case GameState.PAUSED:
@@ -201,75 +220,93 @@ class GameEngine {
   }
 
   /**
-   * Resets world entities, player physics, score, and obstacle arrays for a fresh run.
+   * ============================================================================
+   * CENTRALIZED RUN RESET SYSTEM (Bug-Free Clean Run State)
+   *
+   * Resets 100% of per-run variables while preserving persistent identity,
+   * personal bests, audio settings, and global leaderboards.
+   * ============================================================================
    */
-  resetWorld() {
+  resetRun() {
+    // 1. Reset Player Physics & State
     this.player.x = CONFIG.PLAYER.START_X;
+    this.player.w = CONFIG.PLAYER.WIDTH;
+    this.player.h = CONFIG.PLAYER.HEIGHT;
     this.player.y = this.groundY - CONFIG.PLAYER.HEIGHT;
     this.player.vy = 0;
     this.player.rotation = 0;
     this.player.isGrounded = true;
+    this.player.isSquashing = false;
+    this.player.wantsToUnsquash = false;
+    this.player.isDashing = false;
+    this.player.dashTimer = 0;
+    this.player.dashCooldownTimer = 0;
     this.player.trail = [];
 
+    // 2. Reset World & Obstacle Arrays
     this.obstacles = [];
     this.particles = [];
+    this.groundOffset = 0;
+    this.nextSpawnX = this.virtualWidth + 140;
+
+    // 3. Reset Run Metrics & Difficulty Curves
     this.score = 0;
     this.distance = 0;
     this.survivalTime = 0;
     this.obstacleCounter = 0;
     this.currentSpeed = CONFIG.SPEED.INITIAL;
-    this.nextSpawnX = this.virtualWidth + 120;
+    this.lastMilestone = 0;
+    this.shakeTime = 0;
+    this.shakeDuration = 0;
 
+    // 4. Update HUD Elements
     this.dom.hudScore.textContent = '0';
     this.dom.hudPb.textContent = leaderboard.getPersonalBest();
     this.dom.hudSpeedFill.style.width = '10%';
+    this.dom.hudDashFill.style.width = '100%';
+    this.dom.hudDashFill.className = 'dash-fill ready';
   }
 
   /**
-   * Action: Player Jump / Action Input Trigger
+   * Starts a brand new run from the beginning with full state reset
    */
-  handleAction() {
+  startNewRun() {
+    audio.init();
+    this.sessionAttempts++;
+    this.resetRun();
+    this.setState(GameState.PLAYING);
+  }
+
+  /**
+   * Action: Jump Input Trigger
+   */
+  triggerJump() {
     audio.init();
 
-    if (this.state === GameState.MENU) {
-      this.setState(GameState.PLAYING);
-      this.triggerJump();
-      return;
-    }
-
-    if (this.state === GameState.READY) {
-      this.setState(GameState.PLAYING);
-      this.triggerJump();
+    if (this.state === GameState.MENU || this.state === GameState.READY || this.state === GameState.DEAD) {
+      this.startNewRun();
+      this.executeJumpImpulse();
       return;
     }
 
     if (this.state === GameState.PLAYING) {
-      this.triggerJump();
-      return;
-    }
-
-    if (this.state === GameState.DEAD) {
-      this.sessionAttempts++;
-      this.setState(GameState.PLAYING);
-      this.triggerJump();
-      return;
+      this.executeJumpImpulse();
     }
   }
 
-  /**
-   * Applies vertical jump impulse and spawns kick-up dust particles
-   */
-  triggerJump() {
+  executeJumpImpulse() {
+    // If squashing, cannot jump until releasing squash
+    if (this.player.isSquashing) return;
+
     if (!this.player.isGrounded) return;
 
     this.player.vy = CONFIG.PLAYER.JUMP_FORCE;
     this.player.isGrounded = false;
     audio.playJump();
 
-    // Trigger micro-shake on jump
     this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_JUMP, CONFIG.VISUALS.SHAKE_DURATION_JUMP);
 
-    // Spawn dust particles at base
+    // Spawn dust particles
     for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_JUMP; i++) {
       this.particles.push({
         x: this.player.x + Math.random() * this.player.w,
@@ -281,6 +318,118 @@ class GameEngine {
         alpha: 1,
         life: 0.25,
         maxLife: 0.25
+      });
+    }
+  }
+
+  /**
+   * Action: Squash / Slide Start
+   */
+  startSquash() {
+    if (this.state !== GameState.PLAYING) return;
+    if (this.player.isSquashing) return;
+
+    this.player.isSquashing = true;
+    this.player.wantsToUnsquash = false;
+    audio.playSquash();
+
+    // Adjust dimensions anchored to ground
+    this.player.h = CONFIG.PLAYER.SQUASH_HEIGHT;
+    this.player.w = CONFIG.PLAYER.SQUASH_WIDTH;
+
+    if (this.player.isGrounded) {
+      this.player.y = this.groundY - this.player.h;
+    }
+
+    // Spawn slide dust
+    for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_SQUASH; i++) {
+      this.particles.push({
+        x: this.player.x + Math.random() * this.player.w,
+        y: this.groundY - 2,
+        vx: (Math.random() - 0.9) * 120 - 30,
+        vy: -Math.random() * 40 - 10,
+        size: Math.random() * 3 + 2,
+        color: 'rgba(255, 159, 28, 0.4)',
+        alpha: 0.8,
+        life: 0.2,
+        maxLife: 0.2
+      });
+    }
+  }
+
+  /**
+   * Action: Squash / Slide End with Safe Uncrouch / Expansion Check
+   */
+  endSquash() {
+    if (!this.player.isSquashing) return;
+
+    // Check if there is an obstacle directly overhead blocking expansion
+    if (this.hasOverheadObstacle()) {
+      // Defer unsquashing until the player clears the overhead obstacle
+      this.player.wantsToUnsquash = true;
+      return;
+    }
+
+    this.performSafeUnsquash();
+  }
+
+  hasOverheadObstacle() {
+    // Test if expanding to 40px height would collide with any obstacle
+    const normalH = CONFIG.PLAYER.HEIGHT;
+    const normalW = CONFIG.PLAYER.WIDTH;
+    const testY = this.groundY - normalH;
+    const testX = this.player.x;
+
+    for (const obs of this.obstacles) {
+      if (
+        testX < obs.x + obs.w &&
+        testX + normalW > obs.x &&
+        testY < obs.y + obs.h &&
+        testY + normalH > obs.y
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  performSafeUnsquash() {
+    this.player.isSquashing = false;
+    this.player.wantsToUnsquash = false;
+    this.player.h = CONFIG.PLAYER.HEIGHT;
+    this.player.w = CONFIG.PLAYER.WIDTH;
+
+    if (this.player.isGrounded) {
+      this.player.y = this.groundY - this.player.h;
+    }
+  }
+
+  /**
+   * Action: Dash Trigger
+   */
+  triggerDash() {
+    if (this.state !== GameState.PLAYING) return;
+    if (this.player.isDashing || this.player.dashCooldownTimer > 0) return;
+
+    this.player.isDashing = true;
+    this.player.dashTimer = CONFIG.DASH.DURATION;
+    this.player.dashCooldownTimer = CONFIG.DASH.COOLDOWN;
+    audio.playDash();
+
+    this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_DASH, CONFIG.VISUALS.SHAKE_DURATION_DASH);
+
+    // Spawn Dash Jet Particles
+    for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_DASH; i++) {
+      this.particles.push({
+        x: this.player.x - 5,
+        y: this.player.y + Math.random() * this.player.h,
+        vx: -Math.random() * 280 - 100,
+        vy: (Math.random() - 0.5) * 60,
+        size: Math.random() * 5 + 3,
+        color: CONFIG.COLORS.ACCENT_CYAN,
+        alpha: 1,
+        life: 0.35,
+        maxLife: 0.35
       });
     }
   }
@@ -329,7 +478,7 @@ class GameEngine {
       audio.playNewPB();
     }
 
-    // Generate Roast
+    // Generate Context-Aware Roast
     const roast = roastEngine.generateRoast({
       score: finalScore,
       personalBest: pbBefore,
@@ -337,6 +486,8 @@ class GameEngine {
       survivalTime: this.survivalTime,
       obstacleIndex: this.obstacleCounter,
       killerType: this.lastKillerType,
+      wasDashing: this.player.isDashing,
+      wasSquashing: this.player.isSquashing,
       attemptNumber: this.sessionAttempts
     });
 
@@ -359,12 +510,11 @@ class GameEngine {
    * ============================================================================
    * CONSTRAINT-AWARE PROCEDURAL OBSTACLE GENERATOR
    *
-   * Mathematical Principle:
-   * Max jump reach at current speed = currentSpeed * t_air.
-   * Minimum safe gap = (currentSpeed * t_air) + player_width + safety_buffer.
-   *
-   * Patterns are chosen with dynamic difficulty weights, and mathematically
-   * validated to ensure the jump is ALWAYS fair and physically possible.
+   * Features:
+   * 1. Ground Hazards (Single/Double/Triple Spikes, Solid Blocks)
+   * 2. Mid-Air Hazards (Floating Laser Bars, Floating Hazard Crosses, Energy Gates)
+   * 3. Combinations (Jump -> Squash, Squash -> Dash, Jump -> Dash)
+   * 4. Kinematic Reachability Guarantee: Always preserves minimum safe gaps.
    * ============================================================================
    */
   updateProceduralGeneration() {
@@ -372,13 +522,12 @@ class GameEngine {
       const pattern = this.selectWeightedPattern();
       this.spawnPattern(pattern, this.nextSpawnX);
 
-      // Calculate safe gap based on speed and obstacle complexity
-      const minSafeGap = (this.currentSpeed * this.jumpAirTime) * 0.72 +
+      // Safe reaction gap based on current speed and required mechanic
+      const minSafeGap = (this.currentSpeed * this.jumpAirTime) * 0.70 +
                          CONFIG.PLAYER.WIDTH +
                          CONFIG.OBSTACLES.SAFETY_BUFFER;
 
-      // Spacing slightly tightens as difficulty increases, but never breaches safe threshold
-      const spacingVariance = Math.max(80, 240 - (this.score / 20));
+      const spacingVariance = Math.max(90, 260 - (this.score / 18));
       const nextGap = minSafeGap + Math.random() * spacingVariance;
 
       this.nextSpawnX += pattern.totalWidth + nextGap;
@@ -386,21 +535,25 @@ class GameEngine {
   }
 
   /**
-   * Weighted Pattern Selector (Dynamic Difficulty Curves)
+   * Weighted Pattern Selector (Dynamic Difficulty Progression)
    */
   selectWeightedPattern() {
     const s = this.score;
 
     // Weight distribution shifts as score advances
     let weights;
-    if (s < 300) {
-      weights = { single: 65, double: 25, block: 10, step: 0, triple: 0, barrier: 0 };
-    } else if (s < 1000) {
-      weights = { single: 40, double: 30, block: 15, step: 10, triple: 5, barrier: 0 };
-    } else if (s < 2500) {
-      weights = { single: 25, double: 30, block: 20, step: 15, triple: 7, barrier: 3 };
+    if (s < 350) {
+      // Phase 1: Pure Ground Hazards (Teaches JUMP)
+      weights = { single: 60, double: 25, block: 15, floating_bar: 0, floating_cross: 0, energy_gate: 0, step: 0, triple: 0 };
+    } else if (s < 900) {
+      // Phase 2: Introduces Floating Bars & Crosses (Teaches SQUASH)
+      weights = { single: 30, double: 20, block: 15, floating_bar: 20, floating_cross: 10, energy_gate: 0, step: 5, triple: 0 };
+    } else if (s < 1800) {
+      // Phase 3: Introduces Energy Gates & Timing Gaps (Teaches DASH)
+      weights = { single: 15, double: 15, block: 15, floating_bar: 20, floating_cross: 15, energy_gate: 10, step: 10, triple: 5 };
     } else {
-      weights = { single: 15, double: 25, block: 20, step: 20, triple: 12, barrier: 8 };
+      // Phase 4: High-Tension Multi-Mechanic Combinations
+      weights = { single: 10, double: 15, block: 15, floating_bar: 18, floating_cross: 16, energy_gate: 12, step: 14, triple: 10 };
     }
 
     const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
@@ -443,6 +596,34 @@ class GameEngine {
             { type: 'block', xOffset: 0, w: 40, h: 42 }
           ]
         };
+      case 'floating_bar':
+        // Floating overhead bar: bottom is at y=422 (38px above ground). Requires squash (h=20px) to slide under!
+        return {
+          type: 'floating-bar',
+          totalWidth: 90,
+          elements: [
+            { type: 'floating_bar', xOffset: 0, w: 90, h: 22, yOffset: CONFIG.OBSTACLES.FLOATING_BAR_Y }
+          ]
+        };
+      case 'floating_cross':
+        // Dual floating hazard crosses requiring squash or tight precision
+        return {
+          type: 'floating-cross',
+          totalWidth: 80,
+          elements: [
+            { type: 'floating_cross', xOffset: 0, w: 26, h: 26, yOffset: CONFIG.OBSTACLES.FLOATING_CROSS_Y },
+            { type: 'floating_cross', xOffset: 45, w: 26, h: 26, yOffset: CONFIG.OBSTACLES.FLOATING_CROSS_Y }
+          ]
+        };
+      case 'energy_gate':
+        // Tall energy barrier requiring dash timing or quick clearance
+        return {
+          type: 'energy-gate',
+          totalWidth: 32,
+          elements: [
+            { type: 'energy_gate', xOffset: 0, w: 32, h: 60, yOffset: this.groundY - 60 }
+          ]
+        };
       case 'step':
         return {
           type: 'step-hazard',
@@ -450,14 +631,6 @@ class GameEngine {
           elements: [
             { type: 'block', xOffset: 0, w: 36, h: 32 },
             { type: 'spike', xOffset: 48, w: 36, h: 36 }
-          ]
-        };
-      case 'barrier':
-        return {
-          type: 'high-barrier',
-          totalWidth: 44,
-          elements: [
-            { type: 'barrier', xOffset: 0, w: 44, h: 180, yOffset: 120 }
           ]
         };
       case 'single':
@@ -475,7 +648,7 @@ class GameEngine {
   spawnPattern(pattern, baseX) {
     this.obstacleCounter++;
     for (const el of pattern.elements) {
-      const obsY = el.yOffset
+      const obsY = el.yOffset !== undefined
         ? el.yOffset
         : this.groundY - el.h;
 
@@ -495,7 +668,7 @@ class GameEngine {
    * ============================================================================
    * AABB COLLISION DETECTION SYSTEM
    *
-   * Axis-Aligned Bounding Box with inward hitbox padding for fair "coyote margin".
+   * Handles Player Box (Normal vs Squashed) with forgiving inner insets.
    * ============================================================================
    */
   checkCollisions() {
@@ -506,9 +679,16 @@ class GameEngine {
     const ph = this.player.h - (pad * 2);
 
     for (const obs of this.obstacles) {
-      // For triangle spikes, narrow the top hitbox slightly for extra fairness
-      const obsPadX = obs.type === 'spike' ? 6 : 2;
-      const obsPadY = obs.type === 'spike' ? 6 : 2;
+      let obsPadX = 3;
+      let obsPadY = 3;
+
+      if (obs.type === 'spike') {
+        obsPadX = 6;
+        obsPadY = 6;
+      } else if (obs.type === 'floating_cross') {
+        obsPadX = 4;
+        obsPadY = 4;
+      }
 
       const ox = obs.x + obsPadX;
       const oy = obs.y + obsPadY;
@@ -534,19 +714,58 @@ class GameEngine {
     }
 
     if (this.state !== GameState.PLAYING) {
-      // Update background particles even when paused/menu for alive atmosphere
       this.updateParticles(dt);
       return;
     }
 
     this.survivalTime += dt;
 
+    // --- Dash Timer & Cooldown Update ---
+    if (this.player.isDashing) {
+      this.player.dashTimer -= dt;
+      if (this.player.dashTimer <= 0) {
+        this.player.isDashing = false;
+      }
+    }
+
+    if (this.player.dashCooldownTimer > 0) {
+      const prevTimer = this.player.dashCooldownTimer;
+      this.player.dashCooldownTimer = Math.max(0, this.player.dashCooldownTimer - dt);
+
+      // Dash ready audio cue
+      if (prevTimer > 0 && this.player.dashCooldownTimer === 0) {
+        audio.playDashReady();
+        this.dom.hudDashFill.className = 'dash-fill ready';
+      }
+
+      const cooldownPercent = ((CONFIG.DASH.COOLDOWN - this.player.dashCooldownTimer) / CONFIG.DASH.COOLDOWN) * 100;
+      this.dom.hudDashFill.style.width = `${cooldownPercent}%`;
+      if (this.player.dashCooldownTimer > 0) {
+        this.dom.hudDashFill.className = 'dash-fill cooldown';
+      }
+    } else {
+      this.dom.hudDashFill.style.width = '100%';
+      this.dom.hudDashFill.className = 'dash-fill ready';
+    }
+
+    // --- Check Deferred Safe Unsquash ---
+    if (this.player.wantsToUnsquash) {
+      if (!this.hasOverheadObstacle()) {
+        this.performSafeUnsquash();
+      }
+    }
+
     // Smooth speed acceleration curve
     this.currentSpeed = CONFIG.SPEED.INITIAL +
       (CONFIG.SPEED.MAX - CONFIG.SPEED.INITIAL) * (1 - Math.exp(-this.score / 3200));
 
+    // Calculate effective scrolling speed (accounting for Dash burst)
+    const effectiveSpeed = this.player.isDashing
+      ? this.currentSpeed * CONFIG.DASH.SPEED_MULTIPLIER
+      : this.currentSpeed;
+
     // Distance & Score Increment
-    const moveStep = this.currentSpeed * dt;
+    const moveStep = effectiveSpeed * dt;
     this.distance += moveStep;
     this.score = this.distance / 12;
 
@@ -568,25 +787,33 @@ class GameEngine {
       this.player.vy = Math.min(this.player.vy, CONFIG.PLAYER.MAX_FALL_SPEED);
       this.player.y += this.player.vy * dt;
 
-      // Mid-air cube rotation
-      this.player.rotation += (CONFIG.PLAYER.ROTATION_SPEED * dt) * (Math.PI / 180);
+      // Mid-air cube rotation (only when not squashed)
+      if (!this.player.isSquashing) {
+        this.player.rotation += (CONFIG.PLAYER.ROTATION_SPEED * dt) * (Math.PI / 180);
+      }
 
       // Ground collision resolution
       if (this.player.y + this.player.h >= this.groundY) {
         this.player.y = this.groundY - this.player.h;
         this.player.vy = 0;
         this.player.isGrounded = true;
-        this.player.rotation = 0; // Snap cleanly to ground plane
+        this.player.rotation = 0;
         audio.playLand();
       }
+    } else {
+      // Anchored to ground
+      this.player.y = this.groundY - this.player.h;
     }
 
     // Motion Blur Trail Tracking
     this.player.trail.unshift({
       x: this.player.x,
       y: this.player.y,
+      w: this.player.w,
+      h: this.player.h,
       rotation: this.player.rotation,
-      alpha: 0.5
+      isDashing: this.player.isDashing,
+      alpha: 0.6
     });
     if (this.player.trail.length > CONFIG.VISUALS.TRAIL_MAX_LENGTH) {
       this.player.trail.pop();
@@ -598,7 +825,7 @@ class GameEngine {
       obs.x -= moveStep;
 
       // Remove off-screen obstacles
-      if (obs.x + obs.w < -60) {
+      if (obs.x + obs.w < -80) {
         this.obstacles.splice(i, 1);
       }
     }
@@ -712,7 +939,6 @@ class GameEngine {
         this.ctx.closePath();
         this.ctx.fill();
 
-        // Inner highlight edge
         this.ctx.strokeStyle = '#ff6b8b';
         this.ctx.lineWidth = 1.5;
         this.ctx.stroke();
@@ -726,50 +952,89 @@ class GameEngine {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(obs.x + 1, obs.y + 1, obs.w - 2, obs.h - 2);
 
-        // Center Warning Icon
         this.ctx.fillStyle = '#fff';
         this.ctx.fillRect(obs.x + obs.w / 2 - 2, obs.y + 10, 4, obs.h - 20);
 
-      } else if (obs.type === 'barrier') {
-        // High Ceiling Hazard
-        this.ctx.fillStyle = '#9e0026';
-        this.ctx.fillRect(obs.x, 0, obs.w, obs.y);
-        this.ctx.fillStyle = CONFIG.COLORS.HAZARD_SPIKE;
-        this.ctx.fillRect(obs.x, obs.y - 6, obs.w, 6);
+      } else if (obs.type === 'floating_bar') {
+        // Floating Laser Bar (Neon Pink & Cyan)
+        this.ctx.fillStyle = CONFIG.COLORS.HAZARD_AIR;
+        this.ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+
+        // Core Glowing Laser Beam
+        this.ctx.fillStyle = '#00f5d4';
+        this.ctx.fillRect(obs.x + 4, obs.y + obs.h / 2 - 2, obs.w - 8, 4);
+
+      } else if (obs.type === 'floating_cross') {
+        // Floating Hazard Cross (✕)
+        this.ctx.save();
+        this.ctx.translate(obs.x + obs.w / 2, obs.y + obs.h / 2);
+        this.ctx.strokeStyle = CONFIG.COLORS.HAZARD_AIR;
+        this.ctx.lineWidth = 4;
+        this.ctx.beginPath();
+        this.ctx.moveTo(-obs.w / 2, -obs.h / 2);
+        this.ctx.lineTo(obs.w / 2, obs.h / 2);
+        this.ctx.moveTo(obs.w / 2, -obs.h / 2);
+        this.ctx.lineTo(-obs.w / 2, obs.h / 2);
+        this.ctx.stroke();
+        this.ctx.restore();
+
+      } else if (obs.type === 'energy_gate') {
+        // Energy Gate (Vertical Field)
+        this.ctx.fillStyle = 'rgba(0, 245, 212, 0.25)';
+        this.ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        this.ctx.strokeStyle = CONFIG.COLORS.ACCENT_CYAN;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+
+        // Energy pulses
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(obs.x + 4, obs.y + 4, obs.w - 8, 4);
+        this.ctx.fillRect(obs.x + 4, obs.y + obs.h - 8, obs.w - 8, 4);
       }
     }
   }
 
   renderPlayer() {
-    // Render Fading Motion Trail
+    // 1. Render Motion Trail (Amber or Cyan if Dashing)
     for (let i = 0; i < this.player.trail.length; i++) {
       const t = this.player.trail[i];
-      const alpha = (1 - (i / this.player.trail.length)) * 0.3;
+      const alpha = (1 - (i / this.player.trail.length)) * 0.35;
       this.ctx.save();
-      this.ctx.translate(t.x + this.player.w / 2, t.y + this.player.h / 2);
+      this.ctx.translate(t.x + t.w / 2, t.y + t.h / 2);
       this.ctx.rotate(t.rotation);
-      this.ctx.fillStyle = `rgba(255, 159, 28, ${alpha})`;
-      this.ctx.fillRect(-this.player.w / 2, -this.player.h / 2, this.player.w, this.player.h);
+      this.ctx.fillStyle = t.isDashing
+        ? `rgba(0, 245, 212, ${alpha})`
+        : `rgba(255, 159, 28, ${alpha})`;
+      this.ctx.fillRect(-t.w / 2, -t.h / 2, t.w, t.h);
       this.ctx.restore();
     }
 
-    // Render Main Cube
+    // 2. Render Main Player Body
     this.ctx.save();
     this.ctx.translate(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
     this.ctx.rotate(this.player.rotation);
 
-    // Glowing Body
-    this.ctx.fillStyle = CONFIG.COLORS.PLAYER;
+    // Body Fill
+    this.ctx.fillStyle = this.player.isDashing ? CONFIG.COLORS.ACCENT_CYAN : CONFIG.COLORS.PLAYER;
     this.ctx.fillRect(-this.player.w / 2, -this.player.h / 2, this.player.w, this.player.h);
 
-    // Sharp Accent Border
+    // Border
     this.ctx.strokeStyle = '#ffffff';
     this.ctx.lineWidth = 2;
     this.ctx.strokeRect(-this.player.w / 2 + 1, -this.player.h / 2 + 1, this.player.w - 2, this.player.h - 2);
 
-    // Eye / Visor (Arcade Personality)
+    // Eye / Visor
     this.ctx.fillStyle = CONFIG.COLORS.PLAYER_EYE;
-    this.ctx.fillRect(2, -8, 10, 8);
+    if (this.player.isSquashing) {
+      // Slit eye during squash
+      this.ctx.fillRect(2, -3, 12, 4);
+    } else {
+      this.ctx.fillRect(2, -8, 10, 8);
+    }
 
     this.ctx.restore();
   }
@@ -798,7 +1063,6 @@ class GameEngine {
   loop(currentTime) {
     if (!this.lastTime) this.lastTime = currentTime;
 
-    // Delta time in seconds (clamped to prevent frame burst on tab switch)
     const rawDt = (currentTime - this.lastTime) / 1000;
     this.deltaTime = Math.min(rawDt, 0.1);
     this.lastTime = currentTime;
@@ -810,26 +1074,47 @@ class GameEngine {
   }
 
   /**
-   * Event Bindings
+   * ============================================================================
+   * DECOUPLED ACTION INPUT SYSTEM
+   *
+   * Separates physical hardware keys from abstract gameplay actions:
+   * - jump
+   * - squash (held)
+   * - dash
+   * ============================================================================
    */
-  bindInputs() {
-    // Keyboard controls
+  bindActionInputs() {
+    // Keyboard Down
     window.addEventListener('keydown', (e) => {
-      // Space or ArrowUp or W: Jump/Action
+      // JUMP: Space, ArrowUp, W
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         e.preventDefault();
-        this.handleAction();
-      }
-
-      // R: Instant Retry
-      if (e.code === 'KeyR') {
-        e.preventDefault();
-        audio.playClick();
-        this.setState(GameState.PLAYING);
+        this.inputs.jump = true;
         this.triggerJump();
       }
 
-      // P or Escape: Pause / Resume
+      // SQUASH: ArrowDown, S
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        this.inputs.squash = true;
+        this.startSquash();
+      }
+
+      // DASH: Shift, X
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyX') {
+        e.preventDefault();
+        this.inputs.dash = true;
+        this.triggerDash();
+      }
+
+      // RETRY: R
+      if (e.code === 'KeyR') {
+        e.preventDefault();
+        audio.playClick();
+        this.startNewRun();
+      }
+
+      // PAUSE: P, Escape
       if (e.code === 'KeyP' || e.code === 'Escape') {
         e.preventDefault();
         audio.playClick();
@@ -840,34 +1125,78 @@ class GameEngine {
         }
       }
 
-      // M: Sound Toggle
+      // MUTE: M
       if (e.code === 'KeyM') {
         this.toggleSound();
       }
 
-      // F: Fullscreen Toggle
+      // FULLSCREEN: F
       if (e.code === 'KeyF') {
         this.toggleFullscreen();
       }
     });
 
-    // Touch & Pointer Controls on Canvas
+    // Keyboard Up (Release Squash)
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        this.inputs.squash = false;
+        this.endSquash();
+      }
+    });
+
+    // Mobile / Touch Multi-Zone Bindings
+    const touchJump = document.getElementById('touch-jump-zone');
+    const touchSquash = document.getElementById('touch-squash-zone');
+    const touchDash = document.getElementById('touch-dash-zone');
+
+    if (touchJump) {
+      touchJump.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.triggerJump();
+      });
+    }
+
+    if (touchSquash) {
+      touchSquash.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.startSquash();
+      });
+      touchSquash.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        this.endSquash();
+      });
+      touchSquash.addEventListener('pointerleave', (e) => {
+        e.preventDefault();
+        this.endSquash();
+      });
+    }
+
+    if (touchDash) {
+      touchDash.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.triggerDash();
+      });
+    }
+
+    // Canvas click fallback
     const canvasWrap = document.getElementById('game-wrapper');
     canvasWrap.addEventListener('pointerdown', (e) => {
       if (e.target.closest('.ui-overlay') && !e.target.closest('#ready-overlay')) {
-        return; // Don't trigger jump when clicking overlay buttons
+        return;
+      }
+      if (e.target.closest('#mobile-touch-container')) {
+        return; // Handled by touch zones
       }
       e.preventDefault();
-      this.handleAction();
+      this.triggerJump();
     });
   }
 
-  bindButtons() {
+  bindUIButtons() {
     // Menu Buttons
     document.getElementById('btn-play').addEventListener('click', () => {
       audio.playClick();
-      this.setState(GameState.PLAYING);
-      this.triggerJump();
+      this.startNewRun();
     });
 
     document.getElementById('btn-open-leaderboard').addEventListener('click', () => {
@@ -881,8 +1210,7 @@ class GameEngine {
     });
     document.getElementById('btn-pause-restart').addEventListener('click', () => {
       audio.playClick();
-      this.setState(GameState.PLAYING);
-      this.triggerJump();
+      this.startNewRun();
     });
     document.getElementById('btn-pause-menu').addEventListener('click', () => {
       audio.playClick();
@@ -892,8 +1220,7 @@ class GameEngine {
     // Death Buttons
     document.getElementById('btn-retry').addEventListener('click', () => {
       audio.playClick();
-      this.setState(GameState.PLAYING);
-      this.triggerJump();
+      this.startNewRun();
     });
     document.getElementById('btn-death-leaderboard').addEventListener('click', () => {
       this.openLeaderboard();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>BLOCK DASH — One Button. One Endless Level. No Excuses.</title>
-  <meta name="description" content="A brutally fast-paced, addictive 1-button arcade runner. Avoid mathematically fair hazards, climb the global leaderboard, and get roasted upon failure.">
+  <meta name="description" content="A brutally fast-paced, addictive arcade runner. Jump, squash, and dash to avoid mathematically fair hazards, climb the global leaderboard, and get roasted upon failure.">
   
   <!-- Modern Game Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,7 +14,7 @@
   <!-- Arcade Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
   
-  <!-- Supabase JS Client for Leaderboard & Auth (Optional CDN fallback) -->
+  <!-- Supabase JS Client for Leaderboard & Auth -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -52,8 +52,12 @@
       <div id="scanline-layer" class="scanlines"></div>
       <div class="crt-vignette"></div>
 
-      <!-- Touch Input Zone for Mobile/Tablets -->
-      <div id="touch-control-zone" aria-hidden="true"></div>
+      <!-- Mobile Touch Controls Overlay -->
+      <div id="mobile-touch-container" aria-hidden="true">
+        <div id="touch-jump-zone" class="touch-zone-jump" title="Tap to Jump"></div>
+        <div id="touch-squash-zone" class="touch-zone-squash" title="Hold to Squash">▼ SQUASH</div>
+        <div id="touch-dash-zone" class="touch-zone-dash" title="Tap to Dash">⚡ DASH</div>
+      </div>
 
       <!-- In-Game Live HUD -->
       <div id="game-hud" class="hidden">
@@ -64,12 +68,24 @@
         <div class="hud-group hud-right">
           <span class="hud-label">PERSONAL BEST</span>
           <span id="hud-pb" class="hud-value amber">0</span>
-          <div class="speed-meter" title="Current Speed">
-            <span class="hud-label" style="font-size: 9px;">SPD</span>
-            <div class="speed-bar">
-              <div id="hud-speed-fill" class="speed-fill"></div>
+          
+          <div class="hud-meters">
+            <!-- Speed Meter -->
+            <div class="speed-meter" title="Current Speed">
+              <span class="hud-label" style="font-size: 9px;">SPD</span>
+              <div class="speed-bar">
+                <div id="hud-speed-fill" class="speed-fill"></div>
+              </div>
+            </div>
+            <!-- Dash Cooldown Meter -->
+            <div class="dash-meter" title="Dash Ability Cooldown">
+              <span class="hud-label" style="font-size: 9px; color: var(--accent-cyan);">DASH</span>
+              <div class="dash-bar">
+                <div id="hud-dash-fill" class="dash-fill ready"></div>
+              </div>
             </div>
           </div>
+
         </div>
       </div>
 
@@ -98,15 +114,17 @@
           </button>
         </div>
 
-        <div class="input-hint">
-          <span class="kbd kbd-desktop">SPACE</span> or <span class="kbd">TAP</span> to Jump &bull; Avoid Red Hazards
+        <div class="input-hint-grid">
+          <div class="hint-item"><span class="kbd">SPACE</span> or <span class="kbd">W</span> <span style="color: var(--text-muted)">JUMP</span></div>
+          <div class="hint-item"><span class="kbd">S</span> or <span class="kbd">↓</span> <span style="color: var(--text-muted)">SQUASH</span></div>
+          <div class="hint-item"><span class="kbd">SHIFT</span> or <span class="kbd">X</span> <span style="color: var(--text-muted)">DASH</span></div>
         </div>
       </section>
 
       <!-- READY / COUNTDOWN OVERLAY -->
       <section id="ready-overlay" class="ui-overlay hidden">
         <h2 style="font-size: 32px; font-weight: 900; letter-spacing: 2px;">GET READY</h2>
-        <p class="tagline" style="margin-bottom: 12px;">Press SPACE, Click, or Tap to Jump</p>
+        <p class="tagline" style="margin-bottom: 12px;">Press SPACE, Click, or Tap to Start</p>
       </section>
 
       <!-- PAUSE OVERLAY -->
@@ -117,7 +135,7 @@
           <button id="btn-pause-restart" class="arcade-btn">RESTART</button>
           <button id="btn-pause-menu" class="arcade-btn">MAIN MENU</button>
         </div>
-        <div class="input-hint"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
+        <div class="input-hint-grid" style="margin-top: 14px;"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
       </section>
 
       <!-- DEATH & ROAST OVERLAY -->
@@ -162,8 +180,8 @@
           <button id="btn-death-menu" class="arcade-btn">MENU</button>
         </div>
 
-        <div class="input-hint">
-          <span class="kbd kbd-desktop">SPACE</span> or <span class="kbd">R</span> for Instant Retry
+        <div class="input-hint-grid" style="margin-top: 14px;">
+          <div class="hint-item"><span class="kbd">SPACE</span> or <span class="kbd">R</span> <span style="color: var(--text-muted)">Instant Retry</span></div>
         </div>
       </section>
 

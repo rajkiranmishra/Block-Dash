@@ -71,11 +71,9 @@ class SoundEngine {
     osc.type = 'square';
     const now = this.ctx.currentTime;
 
-    // Fast upward frequency slide (180Hz -> 480Hz in 0.12s)
     osc.frequency.setValueAtTime(180, now);
     osc.frequency.exponentialRampToValueAtTime(480, now + 0.12);
 
-    // Envelope
     gain.gain.setValueAtTime(0.18 * CONFIG.AUDIO.SFX_VOLUME, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
 
@@ -113,6 +111,111 @@ class SoundEngine {
   }
 
   /**
+   * Play Squash / Slide Sound: Downward friction whoosh.
+   */
+  playSquash() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'triangle';
+    const now = this.ctx.currentTime;
+
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+
+    gain.gain.setValueAtTime(0.15 * CONFIG.AUDIO.SFX_VOLUME, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.11);
+  }
+
+  /**
+   * Play Dash Sound: High-energy sonic jet blast.
+   */
+  playDash() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+
+    const now = this.ctx.currentTime;
+
+    // Fast noise swoosh
+    const bufferSize = this.ctx.sampleRate * 0.18;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1200, now);
+    filter.frequency.exponentialRampToValueAtTime(300, now + 0.18);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.25 * CONFIG.AUDIO.SFX_VOLUME, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+
+    noise.start(now);
+    noise.stop(now + 0.19);
+
+    // High pitch sweep
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.12);
+
+    oscGain.gain.setValueAtTime(0.15 * CONFIG.AUDIO.SFX_VOLUME, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.15);
+  }
+
+  /**
+   * Play Dash Ready Sound: Subtle high-pitch harmonic chirp.
+   */
+  playDashReady() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    const now = this.ctx.currentTime;
+
+    osc.frequency.setValueAtTime(1200, now);
+    osc.frequency.setValueAtTime(1600, now + 0.04);
+
+    gain.gain.setValueAtTime(0.08 * CONFIG.AUDIO.SFX_VOLUME, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.1);
+  }
+
+  /**
    * Play Death Sound: Aggressive noise burst + bitcrush crunch.
    */
   playDeath() {
@@ -121,7 +224,6 @@ class SoundEngine {
 
     const now = this.ctx.currentTime;
 
-    // 1. White Noise Generator for explosion impact
     const bufferSize = this.ctx.sampleRate * 0.35;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -148,7 +250,6 @@ class SoundEngine {
     noise.start(now);
     noise.stop(now + 0.36);
 
-    // 2. Downward square oscillator for mechanical snap
     const osc = this.ctx.createOscillator();
     const oscGain = this.ctx.createGain();
     osc.type = 'sawtooth';
@@ -166,7 +267,7 @@ class SoundEngine {
   }
 
   /**
-   * Play Score Milestone Ding: Crisp high harmonic chime.
+   * Play Score Milestone Ding.
    */
   playScoreDing() {
     if (this.isMuted || !this.ctx) return;
@@ -178,7 +279,7 @@ class SoundEngine {
     osc.type = 'sine';
     const now = this.ctx.currentTime;
 
-    osc.frequency.setValueAtTime(987.77, now); // B5 note
+    osc.frequency.setValueAtTime(987.77, now);
     gain.gain.setValueAtTime(0.2 * CONFIG.AUDIO.SFX_VOLUME, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
 
@@ -190,13 +291,13 @@ class SoundEngine {
   }
 
   /**
-   * Play New Personal Best Fanfare: Fast 4-note ascending arcade arpeggio.
+   * Play New Personal Best Fanfare.
    */
   playNewPB() {
     if (this.isMuted || !this.ctx) return;
     this.resume();
 
-    const notes = [440, 554.37, 659.25, 880]; // A4, C#5, E5, A5
+    const notes = [440, 554.37, 659.25, 880];
     const now = this.ctx.currentTime;
 
     notes.forEach((freq, idx) => {

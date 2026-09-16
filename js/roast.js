@@ -8,12 +8,15 @@
 export class RoastEngine {
   constructor() {
     this.recentRoasts = []; // LRU queue of recent roast IDs to prevent repetitive lines
-    this.maxHistory = 12;
+    this.maxHistory = 15;
     this.deathCountToObstacle = {
       'single-spike': 0,
       'double-spike': 0,
       'triple-spike': 0,
       'block': 0,
+      'floating-cross': 0,
+      'floating-bar': 0,
+      'energy-gate': 0,
       'high-barrier': 0,
       'step-hazard': 0,
       'default': 0
@@ -30,6 +33,9 @@ export class RoastEngine {
       'double-spike': 0,
       'triple-spike': 0,
       'block': 0,
+      'floating-cross': 0,
+      'floating-bar': 0,
+      'energy-gate': 0,
       'high-barrier': 0,
       'step-hazard': 0,
       'default': 0
@@ -47,6 +53,8 @@ export class RoastEngine {
    * @param {number} data.survivalTime - Seconds survived in this run
    * @param {number} data.obstacleIndex - Which obstacle number killed the player (1 = first)
    * @param {string} data.killerType - Type of obstacle that caused the death
+   * @param {boolean} data.wasDashing - Whether the player was dashing during impact
+   * @param {boolean} data.wasSquashing - Whether the player was squashing during impact
    * @param {number} data.attemptNumber - Total attempts in current session
    * @returns {{ category: string, text: string, meme: string|null }}
    */
@@ -58,6 +66,8 @@ export class RoastEngine {
       survivalTime,
       obstacleIndex,
       killerType = 'single-spike',
+      wasDashing = false,
+      wasSquashing = false,
       attemptNumber
     } = data;
 
@@ -79,6 +89,15 @@ export class RoastEngine {
     // --- Decision Tree Classification ---
     if (isNewPB && score > 200) {
       category = 'NEW_PB';
+    } else if (wasDashing) {
+      category = 'DASHED_INTO_OBSTACLE';
+      meme = 'Accelerated directly into oblivion at 1.85x speed.';
+    } else if ((cleanType === 'floating-bar' || cleanType === 'floating-cross') && !wasSquashing) {
+      category = 'FAILED_TO_SQUASH';
+      meme = 'Press DOWN/S to squash. It was literally right there.';
+    } else if (cleanType === 'floating-cross' || cleanType === 'floating-bar') {
+      category = 'FAILED_AIR_OBSTACLE';
+      meme = 'Gravity was innocent. The flying hazard was not.';
     } else if (personalBest > 500 && score >= personalBest * 0.94 && score < personalBest) {
       category = 'ALMOST_PB';
       const diff = Math.round(personalBest - score);
@@ -97,7 +116,7 @@ export class RoastEngine {
     } else if (killCount >= 4) {
       category = 'REPEAT_FAILURE';
       const obstacleName = this._getObstacleDisplayName(cleanType);
-      meme = `${obstacleName} has killed you ${killCount} times. It's charging you rent.`;
+      meme = `${obstacleName} has killed you ${killCount} times. Strong commitment to failure.`;
     } else if (score < 250) {
       category = 'LOW_SCORE';
     } else if (score > 3500) {
@@ -120,6 +139,9 @@ export class RoastEngine {
       case 'double-spike': return 'The Twin Spikes';
       case 'triple-spike': return 'The Spike Trio';
       case 'block': return 'The Brick Wall';
+      case 'floating-bar': return 'The Overhead Laser';
+      case 'floating-cross': return 'The Floating Crosses';
+      case 'energy-gate': return 'The Energy Gate';
       case 'high-barrier': return 'The Overhead Crusher';
       case 'step-hazard': return 'The Step Pit';
       default: return 'That Hazard';
@@ -171,12 +193,32 @@ const ROAST_DATABASE = {
     "Legend says obstacle number two is actually really cool.",
     "That first jump is mathematically guaranteed to be free. And yet."
   ],
+  FAILED_TO_SQUASH: [
+    "You are literally a shape-shifter with ONE transformation: flat.",
+    "Down arrow / S key exists. It was waiting for you.",
+    "A cube with too much pride to duck. Tragic.",
+    "The laser gave you a very aggressive haircut.",
+    "Squashing was optional. Survival was not."
+  ],
+  FAILED_AIR_OBSTACLE: [
+    "Gravity wasn't even responsible for that one.",
+    "Mid-air hazard: 1. Your spatial awareness: 0.",
+    "Look up. There's a whole world of danger up there.",
+    "Floating hazards don't move. You drove right into it."
+  ],
+  DASHED_INTO_OBSTACLE: [
+    "You saw danger and chose to accelerate into it.",
+    "Speed wasn't the problem. The concrete wall was.",
+    "Dash button activated. Target: Immediate death.",
+    "Fastest delivery of a cube into a hazard recorded today.",
+    "You dashed with supreme confidence and zero clearance."
+  ],
   REPEAT_FAILURE: [
-    "At this point, that exact spike is beginning to recognize you.",
-    "Have you considered jumping before hitting the hazard instead of after?",
+    "At this point, that exact hazard is beginning to recognize you.",
+    "Excellent. Same mistake. Strong commitment.",
     "That obstacle has a higher K/D ratio against you than a Dark Souls boss.",
     "It's not personal. The hazard is just doing its 9-to-5.",
-    "Definition of insanity: doing the exact same jump and expecting to clear it."
+    "Definition of insanity: doing the exact same move and expecting to survive."
   ],
   ALMOST_PB: [
     "Two points away. That's going to keep you awake tonight.",
@@ -189,26 +231,26 @@ const ROAST_DATABASE = {
     "Wait. You're actually getting competent. That's inconvenient.",
     "New Personal Best! The game is officially displeased.",
     "Fine, take your record. Don't let it get to your head.",
-    "Look at you, pressing the spacebar with purpose.",
+    "Look at you, pressing buttons with purpose.",
     "New record achieved! Now do it at twice the speed."
   ],
   RAGE_STREAK: [
-    "Your spacebar is begging for mercy.",
+    "Your keyboard is begging for mercy.",
     "Breathing is free. Take one before hitting retry.",
-    "Spamming retry won't make the spike softer.",
+    "Spamming retry won't make the hazard softer.",
     "Rage is not a valid physics modifier.",
     "Calm hands, frantic failure."
   ],
   LOW_SCORE: [
     "Your reaction time just filed for early retirement.",
     "Gravity: 1. You: 0.",
-    "The block goes OVER the spike, not into it.",
+    "The block goes OVER the spike or UNDER the bar.",
     "Are you playing with oven mitts?",
     "A gallant effort by the floor to stop your descent."
   ],
   HIGH_SCORE: [
     "You survived long enough for the game to actually respect you. Almost.",
-    "A respectable run. The spikes had to work overtime for that one.",
+    "A respectable run. The hazards had to work overtime for that one.",
     "High velocity, high tension, catastrophic conclusion.",
     "Top-tier reflexes right up until that tragic miscalculation."
   ],
