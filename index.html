@@ -89,13 +89,20 @@
         </div>
       </div>
 
-      <!-- MENU OVERLAY -->
-      <section id="menu-overlay" class="ui-overlay">
+      <!-- 1. INTRO / CINEMATIC ENTRY SCREEN -->
+      <section id="intro-overlay" class="ui-overlay">
+        <h1 class="intro-title">BLOCK <span>DASH</span></h1>
+        <div class="intro-prompt">[ CLICK TO ENTER ]</div>
+      </section>
+
+      <!-- 2. MAIN MENU OVERLAY -->
+      <section id="menu-overlay" class="ui-overlay hidden">
         <h1 class="game-title">BLOCK <span>DASH</span></h1>
+        <div class="rage-badge">⚡ RAGE MODE ACTIVE ⚡</div>
         <p class="tagline">One button. One endless level. No excuses.</p>
         
-        <div class="btn-row">
-          <button id="btn-play" class="arcade-btn primary" autofocus>
+        <div class="menu-button-grid">
+          <button id="btn-play" class="arcade-btn primary full-width" autofocus>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
@@ -112,22 +119,134 @@
             </svg>
             LEADERBOARD
           </button>
+          <button id="btn-open-guide" class="arcade-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            HOW TO PLAY
+          </button>
+          <button id="btn-open-settings" class="arcade-btn full-width">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            SETTINGS
+          </button>
         </div>
 
         <div class="input-hint-grid">
-          <div class="hint-item"><span class="kbd">SPACE</span> or <span class="kbd">W</span> <span style="color: var(--text-muted)">JUMP</span></div>
-          <div class="hint-item"><span class="kbd">S</span> or <span class="kbd">↓</span> <span style="color: var(--text-muted)">SQUASH</span></div>
-          <div class="hint-item"><span class="kbd">SHIFT</span> or <span class="kbd">X</span> <span style="color: var(--text-muted)">DASH</span></div>
+          <div class="hint-item"><span class="kbd">SPACE</span> / <span class="kbd">W</span> <span style="color: var(--text-muted)">JUMP</span></div>
+          <div class="hint-item"><span class="kbd">S</span> / <span class="kbd">↓</span> <span style="color: var(--text-muted)">SQUASH</span></div>
+          <div class="hint-item"><span class="kbd">SHIFT</span> / <span class="kbd">X</span> <span style="color: var(--text-muted)">DASH</span></div>
         </div>
       </section>
 
-      <!-- READY / COUNTDOWN OVERLAY -->
-      <section id="ready-overlay" class="ui-overlay hidden">
-        <h2 style="font-size: 32px; font-weight: 900; letter-spacing: 2px;">GET READY</h2>
-        <p class="tagline" style="margin-bottom: 12px;">Press SPACE, Click, or Tap to Start</p>
+      <!-- 3. HOW TO PLAY MODAL -->
+      <section id="guide-overlay" class="ui-overlay hidden">
+        <div class="arcade-modal">
+          <div class="modal-header">
+            <div class="modal-title">HOW TO SURVIVE</div>
+            <button id="btn-close-guide" class="icon-btn" aria-label="Close Guide">✕</button>
+          </div>
+
+          <div class="guide-grid">
+            <div class="guide-item">
+              <div class="guide-keys">
+                <span class="kbd">SPACE</span>
+                <span class="kbd">W / ↑</span>
+              </div>
+              <div class="guide-desc">
+                <h4>1. JUMP</h4>
+                <p>Leap over spikes, solid barrier blocks, and stepped obstacles.</p>
+              </div>
+            </div>
+
+            <div class="guide-item squash">
+              <div class="guide-keys">
+                <span class="kbd">S</span>
+                <span class="kbd">↓</span>
+              </div>
+              <div class="guide-desc">
+                <h4>2. SQUASH / SLIDE</h4>
+                <p>Hold to flatten your cube to 50% height and slide under floating lasers & crosses.</p>
+              </div>
+            </div>
+
+            <div class="guide-item dash">
+              <div class="guide-keys">
+                <span class="kbd">SHIFT</span>
+                <span class="kbd">X</span>
+              </div>
+              <div class="guide-desc">
+                <h4>3. DASH BURST</h4>
+                <p>Activate a 1.85x sonic speed burst across wide hazard gaps & energy gates. (1.2s Cooldown)</p>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-guide-start" class="arcade-btn primary" style="width: 100%;">LET'S DASH</button>
+        </div>
       </section>
 
-      <!-- PAUSE OVERLAY -->
+      <!-- 4. SETTINGS MODAL -->
+      <section id="settings-overlay" class="ui-overlay hidden">
+        <div class="arcade-modal">
+          <div class="modal-header">
+            <div class="modal-title">SETTINGS</div>
+            <button id="btn-close-settings" class="icon-btn" aria-label="Close Settings">✕</button>
+          </div>
+
+          <div class="settings-list">
+            <!-- Master Volume -->
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Master Volume</div>
+                <div class="setting-sub">Overall game volume</div>
+              </div>
+              <input type="range" id="slider-master-vol" min="0" max="1" step="0.05" value="0.7">
+            </div>
+
+            <!-- Music Volume -->
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Synthwave Soundtrack</div>
+                <div class="setting-sub">Dynamic procedural music</div>
+              </div>
+              <input type="range" id="slider-music-vol" min="0" max="1" step="0.05" value="0.4">
+            </div>
+
+            <!-- SFX Volume -->
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Sound Effects (SFX)</div>
+                <div class="setting-sub">Jumps, slashes, impacts</div>
+              </div>
+              <input type="range" id="slider-sfx-vol" min="0" max="1" step="0.05" value="0.8">
+            </div>
+
+            <!-- Accent Color Picker -->
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Cube Neon Accent</div>
+                <div class="setting-sub">Select your color skin</div>
+              </div>
+              <div class="color-picker">
+                <div class="color-dot active" data-color="#ff9f1c" style="background: #ff9f1c;" title="Neon Amber"></div>
+                <div class="color-dot" data-color="#00f5d4" style="background: #00f5d4;" title="Cyber Cyan"></div>
+                <div class="color-dot" data-color="#ff2a55" style="background: #ff2a55;" title="Crimson Red"></div>
+                <div class="color-dot" data-color="#b5179e" style="background: #b5179e;" title="Electric Violet"></div>
+                <div class="color-dot" data-color="#06d6a0" style="background: #06d6a0;" title="Toxic Emerald"></div>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-save-settings" class="arcade-btn primary" style="width: 100%;">APPLY SETTINGS</button>
+        </div>
+      </section>
+
+      <!-- 5. PAUSE OVERLAY -->
       <section id="pause-overlay" class="ui-overlay hidden">
         <h2 style="font-size: 36px; font-weight: 900; letter-spacing: 2px; color: var(--accent-amber);">PAUSED</h2>
         <div class="btn-row">
@@ -138,7 +257,7 @@
         <div class="input-hint-grid" style="margin-top: 14px;"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
       </section>
 
-      <!-- DEATH & ROAST OVERLAY -->
+      <!-- 6. DEATH & ROAST OVERLAY -->
       <section id="death-overlay" class="ui-overlay hidden">
         <div class="death-banner">YOU DIED</div>
         
@@ -185,11 +304,11 @@
         </div>
       </section>
 
-      <!-- GLOBAL LEADERBOARD OVERLAY -->
+      <!-- 7. GLOBAL LEADERBOARD OVERLAY -->
       <section id="leaderboard-overlay" class="ui-overlay hidden">
-        <div class="leaderboard-modal">
-          <div class="leaderboard-header">
-            <div class="leaderboard-title">GLOBAL LEADERBOARD</div>
+        <div class="arcade-modal">
+          <div class="modal-header">
+            <div class="modal-title">GLOBAL LEADERBOARD</div>
             <button id="btn-close-leaderboard" class="icon-btn" aria-label="Close Leaderboard">✕</button>
           </div>
 
