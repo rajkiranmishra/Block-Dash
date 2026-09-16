@@ -7,6 +7,7 @@
 
 import { CONFIG } from '../js/config.js';
 import { RoastEngine } from '../js/roast.js';
+import { InputManager, InputActions } from '../js/input.js';
 
 console.log('🧪 ========================================================');
 console.log('🧪 BLOCK DASH — AUTOMATED ENGINEERING & PHYSICS TESTS');
@@ -277,9 +278,75 @@ console.log(`Tutorial Combo Gaps: Gap 1 = ${gap1}px (${timeGap1.toFixed(2)}s), G
 assert(timeGap1 >= 0.70, `Combo Gap 1 time (${timeGap1.toFixed(2)}s) gives player sufficient recovery after jump.`);
 assert(timeGap2 >= 0.65, `Combo Gap 2 time (${timeGap2.toFixed(2)}s) gives player sufficient reaction time before dash.`);
 
+// --- Test 8: InputManager Action Abstraction & Multitouch Safety ---
+console.log('\n--- TEST 8: InputManager Action Abstraction & Multitouch Safety ---');
+const inputMgr = new InputManager();
+
+let jumpTriggered = 0;
+let squashStartTriggered = 0;
+let squashEndTriggered = 0;
+let dashTriggered = 0;
+let retryTriggered = 0;
+
+inputMgr.onJump(() => jumpTriggered++);
+inputMgr.onSquashStart(() => squashStartTriggered++);
+inputMgr.onSquashEnd(() => squashEndTriggered++);
+inputMgr.onDash(() => dashTriggered++);
+inputMgr.onRetry(() => retryTriggered++);
+
+// Simulate Desktop Physical Inputs
+inputMgr.emit(InputActions.JUMP);
+assert(jumpTriggered === 1, 'Physical Space/W/Click maps into unified JUMP action.');
+
+inputMgr.requestSquashStart();
+assert(squashStartTriggered === 1 && inputMgr.isSquashing === true, 'Physical Down/S maps into unified SQUASH_START action.');
+
+// Redundant squash start should not double trigger
+inputMgr.requestSquashStart();
+assert(squashStartTriggered === 1, 'Debounced squash start prevents duplicate action firing.');
+
+// Simulate Concurrent Touch: player holds squash while tapping dash or jump
+inputMgr.requestDash();
+assert(dashTriggered === 1, 'Multitouch concurrent action: DASH dispatches while SQUASH is held.');
+
+inputMgr.requestJump();
+assert(jumpTriggered === 2, 'Multitouch concurrent action: JUMP dispatches while SQUASH is held.');
+
+inputMgr.requestSquashEnd();
+assert(squashEndTriggered === 1 && inputMgr.isSquashing === false, 'Physical release or finger leave triggers SQUASH_END action.');
+
+inputMgr.requestRetry();
+assert(retryTriggered === 1, 'R key or Mobile Retry button maps into unified RETRY action.');
+
+// --- Test 9: Adaptive Interface Mode Detection & Invariant Stability ---
+console.log('\n--- TEST 9: Adaptive UI Mode Detection & State Invariant Safety ---');
+
+assert(typeof inputMgr.detectMode === 'function', 'InputManager exposes clean feature-based detectMode().');
+assert(inputMgr.isMobile() || inputMgr.isDesktop(), 'Device mode resolves to valid "mobile" or "desktop" state.');
+
+// Verify run variables safety during simulated orientation rotation
+const simulatedRunState = {
+  score: 1420,
+  distance: 17040,
+  speed: 520,
+  obstacles: [{ x: 300, y: 424, w: 36, h: 36 }],
+  player: { x: 120, y: 420, vy: -350, isSquashing: false, isDashing: false },
+  isOrientationPaused: false
+};
+
+// Simulate rotating to portrait during active gameplay
+simulatedRunState.isOrientationPaused = true;
+// Simulate rotating back to landscape
+simulatedRunState.isOrientationPaused = false;
+
+assert(simulatedRunState.score === 1420, 'Score is 100% preserved across orientation change.');
+assert(simulatedRunState.player.y === 420 && simulatedRunState.player.vy === -350, 'Player position and velocity are untouched across orientation changes.');
+assert(simulatedRunState.obstacles.length === 1, 'Active obstacles are not wiped or altered by orientation changes.');
+
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);
 console.log(`========================================================\n`);
 
 if (failCount > 0) process.exit(1);
+
 

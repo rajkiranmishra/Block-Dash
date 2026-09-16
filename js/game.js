@@ -20,6 +20,7 @@ import { storage } from './storage.js';
 import { audio } from './audio.js';
 import { roastEngine } from './roast.js';
 import { leaderboard, records } from './leaderboard.js';
+import { InputManager, InputActions } from './input.js';
 
 // --- Game State Enum ---
 export const GameState = Object.freeze({
@@ -50,6 +51,9 @@ class GameEngine {
     this.canvas = document.getElementById('game-canvas');
     this.ctx = this.canvas.getContext('2d');
     
+    // Centralized Input Manager
+    this.inputManager = new InputManager();
+
     // Internal logical coordinate system (16:9)
     this.virtualWidth = CONFIG.CANVAS.WIDTH;
     this.virtualHeight = CONFIG.CANVAS.HEIGHT;
@@ -63,6 +67,7 @@ class GameEngine {
     this.deltaTime = 0;
     this.sessionAttempts = 0;
     this.demolitionCount = 0;
+    this.isOrientationPaused = false;
 
     // Intro Cinematic Variables
     this.introTimer = 0;
@@ -80,7 +85,7 @@ class GameEngine {
 
     // 3D Starfield Array
     this.warpStars = [];
-    this.numWarpStars = 120;
+    this.numWarpStars = this.inputManager.isMobile() ? 65 : 120;
 
     // Per-Run Telemetry & Metrics
     this.score = 0;
@@ -185,6 +190,10 @@ class GameEngine {
       hudPb: document.getElementById('hud-pb'),
       hudSpeedFill: document.getElementById('hud-speed-fill'),
       hudDashFill: document.getElementById('hud-dash-fill'),
+      touchDashZone: document.getElementById('touch-dash-zone'),
+      dashCircleFill: document.getElementById('dash-circle-fill'),
+      rotatePrompt: document.getElementById('rotate-prompt'),
+      introPrompt: document.querySelector('.intro-prompt'),
       tutorialHud: document.getElementById('tutorial-hud'),
       tutorialStepTag: document.getElementById('tutorial-step-tag'),
       tutorialDirective: document.getElementById('tutorial-directive'),
@@ -226,7 +235,14 @@ class GameEngine {
    */
   init() {
     this.resizeCanvas();
-    window.addEventListener('resize', () => this.resizeCanvas());
+    window.addEventListener('resize', () => {
+      this.resizeCanvas();
+      this.checkOrientation();
+    });
+    window.addEventListener('orientationchange', () => {
+      this.resizeCanvas();
+      this.checkOrientation();
+    });
 
     for (let i = 0; i < this.numWarpStars; i++) {
       this.warpStars.push({
@@ -242,12 +258,49 @@ class GameEngine {
     this.bindActionInputs();
     this.bindUIButtons();
 
+    this.inputManager.onModeChange((mode) => {
+      this.handleUIModeChange(mode);
+    });
+    this.handleUIModeChange(this.inputManager.uiMode);
+
     this.dom.hudPb.textContent = storage.getBestScore();
     this.dom.playerNameInput.value = storage.getPlayerName();
 
     this.setState(GameState.INTRO_IDLE);
 
     requestAnimationFrame((time) => this.loop(time));
+  }
+
+  handleUIModeChange(mode) {
+    if (this.dom.introPrompt) {
+      this.dom.introPrompt.textContent = mode === 'mobile' ? '[ TAP TO ENTER ]' : '[ CLICK TO ENTER ]';
+    }
+    if (this.state === GameState.TUTORIAL) {
+      this.updateTutorialDirectiveText();
+    }
+  }
+
+  checkOrientation() {
+    if (typeof window === 'undefined') return;
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const isMobile = this.inputManager.isMobile();
+
+    if (isMobile && isPortrait && (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL)) {
+      if (!this.isOrientationPaused) {
+        this.isOrientationPaused = true;
+        if (this.dom.rotatePrompt) {
+          this.dom.rotatePrompt.classList.remove('hidden');
+        }
+      }
+    } else {
+      if (this.isOrientationPaused) {
+        this.isOrientationPaused = false;
+        if (this.dom.rotatePrompt) {
+          this.dom.rotatePrompt.classList.add('hidden');
+        }
+        this.resizeCanvas();
+      }
+    }
   }
 
   resizeCanvas() {
@@ -376,6 +429,14 @@ class GameEngine {
     this.dom.hudSpeedFill.style.width = '10%';
     this.dom.hudDashFill.style.width = '100%';
     this.dom.hudDashFill.className = 'dash-fill ready';
+
+    if (this.dom.touchDashZone) {
+      this.dom.touchDashZone.classList.remove('cooldown');
+      this.dom.touchDashZone.classList.add('ready');
+    }
+    if (this.dom.dashCircleFill) {
+      this.dom.dashCircleFill.setAttribute('stroke-dasharray', '100, 100');
+    }
   }
 
   startNewRun() {
@@ -543,7 +604,8 @@ class GameEngine {
   }
 
   addScreenShake(intensity, duration) {
-    this.shakeIntensity = intensity;
+    const scale = (this.inputManager && this.inputManager.isMobile()) ? 0.65 : 1.0;
+    this.shakeIntensity = intensity * scale;
     this.shakeDuration = duration;
     this.shakeTime = duration;
   }
@@ -1275,17 +1337,39 @@ class GameEngine {
 
       if (prevTimer > 0 && this.player.dashCooldownTimer === 0) {
         audio.playDashReady();
-        this.dom.hudDashFill.className = 'dash-fill ready';
+        if (this.dom.hudDashFill) this.dom.hudDashFill.className = 'dash-fill ready';
+        if (this.dom.touchDashZone) {
+          this.dom.touchDashZone.classList.remove('cooldown');
+          this.dom.touchDashZone.classList.add('ready');
+        }
       }
 
       const cooldownPercent = ((CONFIG.DASH.COOLDOWN - this.player.dashCooldownTimer) / CONFIG.DASH.COOLDOWN) * 100;
-      this.dom.hudDashFill.style.width = `${cooldownPercent}%`;
-      if (this.player.dashCooldownTimer > 0) {
-        this.dom.hudDashFill.className = 'dash-fill cooldown';
+      if (this.dom.hudDashFill) {
+        this.dom.hudDashFill.style.width = `${cooldownPercent}%`;
+        if (this.player.dashCooldownTimer > 0) {
+          this.dom.hudDashFill.className = 'dash-fill cooldown';
+        }
+      }
+      if (this.dom.touchDashZone && this.player.dashCooldownTimer > 0) {
+        this.dom.touchDashZone.classList.add('cooldown');
+        this.dom.touchDashZone.classList.remove('ready');
+      }
+      if (this.dom.dashCircleFill) {
+        this.dom.dashCircleFill.setAttribute('stroke-dasharray', `${Math.floor(cooldownPercent)}, 100`);
       }
     } else {
-      this.dom.hudDashFill.style.width = '100%';
-      this.dom.hudDashFill.className = 'dash-fill ready';
+      if (this.dom.hudDashFill) {
+        this.dom.hudDashFill.style.width = '100%';
+        this.dom.hudDashFill.className = 'dash-fill ready';
+      }
+      if (this.dom.touchDashZone) {
+        this.dom.touchDashZone.classList.remove('cooldown');
+        this.dom.touchDashZone.classList.add('ready');
+      }
+      if (this.dom.dashCircleFill) {
+        this.dom.dashCircleFill.setAttribute('stroke-dasharray', '100, 100');
+      }
     }
 
     // --- Safe Unsquash Check ---
@@ -1877,6 +1961,32 @@ class GameEngine {
     }
   }
 
+  getTutorialDirective(stepIndex) {
+    const isMob = this.inputManager && this.inputManager.isMobile();
+    switch (stepIndex) {
+      case 0:
+        return 'NEURAL LINK CONNECTED';
+      case 1:
+        return isMob ? 'TAP PLAY AREA TO JUMP' : 'TAP SPACE / CLICK TO JUMP';
+      case 2:
+        return isMob ? 'HOLD ▼ SQUASH TO SLIDE' : 'HOLD S / ↓ TO SQUASH & DUCK';
+      case 3:
+        return isMob ? 'TAP ⚡ DASH TO BURST' : 'PRESS SHIFT / X TO DASH';
+      case 4:
+        return isMob ? 'CHAIN ACTIONS // TAP, HOLD, DASH' : 'CHAIN ACTIONS // JUMP, SQUASH, DASH';
+      case 5:
+        return 'SIMULATION COMPLETED';
+      default:
+        return '';
+    }
+  }
+
+  updateTutorialDirectiveText() {
+    if (this.state === GameState.TUTORIAL && this.dom.tutorialDirective) {
+      this.dom.tutorialDirective.textContent = this.getTutorialDirective(this.tutorial.step);
+    }
+  }
+
   loadTutorialStep(stepIndex) {
     this.tutorial.step = stepIndex;
     this.tutorial.stepTimer = 0;
@@ -1899,17 +2009,17 @@ class GameEngine {
     this.player.isDashing = false;
     this.player.dashCooldownTimer = 0;
 
+    this.dom.tutorialDirective.textContent = this.getTutorialDirective(stepIndex);
+
     switch (stepIndex) {
       case 0: // BOOT
         this.dom.tutorialStepTag.textContent = 'CALIBRATION // INITIALIZING';
-        this.dom.tutorialDirective.textContent = 'NEURAL LINK CONNECTED';
         this.dom.tutorialTip.textContent = 'Synchronizing motor controls. Prepare for tactical movement training...';
         audio.playTutorialStep();
         break;
 
       case 1: // JUMP
         this.dom.tutorialStepTag.textContent = 'STEP 1 OF 3 // THE LEAP';
-        this.dom.tutorialDirective.textContent = 'TAP SPACE / CLICK TO JUMP';
         this.dom.tutorialTip.textContent = 'Time your leap to clear the holographic spike cleanly.';
         audio.playTutorialStep();
         this.spawnTutorialObstacle('spike', this.virtualWidth + 140, this.groundY - 36, 36, 36);
@@ -1917,7 +2027,6 @@ class GameEngine {
 
       case 2: // SQUASH
         this.dom.tutorialStepTag.textContent = 'STEP 2 OF 3 // SQUASH & DUCK';
-        this.dom.tutorialDirective.textContent = 'HOLD S / ↓ TO SQUASH & DUCK';
         this.dom.tutorialTip.textContent = 'Compress your chassis to slide safely under low-altitude laser bars.';
         audio.playTutorialStep();
         this.spawnTutorialObstacle('floating_bar', this.virtualWidth + 140, this.groundY - 50, 120, 22);
@@ -1925,7 +2034,6 @@ class GameEngine {
 
       case 3: // DASH
         this.dom.tutorialStepTag.textContent = 'STEP 3 OF 3 // HYPER DASH';
-        this.dom.tutorialDirective.textContent = 'PRESS SHIFT / X TO DASH';
         this.dom.tutorialTip.textContent = 'Trigger thruster burst for high-velocity clearance across hazard fields.';
         audio.playTutorialStep();
         this.spawnTutorialObstacle('double-spike', this.virtualWidth + 140, this.groundY - 36, 72, 36);
@@ -1933,7 +2041,6 @@ class GameEngine {
 
       case 4: // COMBO
         this.dom.tutorialStepTag.textContent = 'FINAL EVALUATION // COMBAT REFLEX';
-        this.dom.tutorialDirective.textContent = 'CHAIN ACTIONS // JUMP, SQUASH, DASH';
         this.dom.tutorialTip.textContent = 'Execute sequential maneuvers through the obstacle simulation grid.';
         audio.playTutorialStep();
         this.spawnTutorialObstacle('spike', this.virtualWidth + 140, this.groundY - 36, 36, 36);
@@ -1943,7 +2050,6 @@ class GameEngine {
 
       case 5: // COMPLETE
         this.dom.tutorialStepTag.textContent = 'TRAINING COMPLETE // COMBAT READY';
-        this.dom.tutorialDirective.textContent = 'SIMULATION COMPLETED';
         this.dom.tutorialTip.textContent = 'Dematerializing matrix. Transferring to live combat sector...';
         storage.markTutorialSeen();
         audio.playTutorialComplete();
@@ -2281,116 +2387,60 @@ class GameEngine {
   }
 
   bindActionInputs() {
-    window.addEventListener('keydown', (e) => {
+    this.inputManager.onJump(() => {
       if (this.state === GameState.INTRO_IDLE) {
-        if (e.code === 'Space' || e.code === 'Enter') {
-          e.preventDefault();
-          this.startCinematicEntrance();
-        }
-        return;
-      }
-
-      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-        e.preventDefault();
+        this.startCinematicEntrance();
+      } else if (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL) {
         this.inputs.jump = true;
         this.triggerJump();
       }
+    });
 
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
-        e.preventDefault();
+    this.inputManager.onSquashStart(() => {
+      if (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL) {
         this.inputs.squash = true;
         this.startSquash();
       }
+    });
 
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyX') {
-        e.preventDefault();
+    this.inputManager.onSquashEnd(() => {
+      this.inputs.squash = false;
+      if (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL) {
+        this.endSquash();
+      }
+    });
+
+    this.inputManager.onDash(() => {
+      if (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL) {
         this.inputs.dash = true;
         this.triggerDash();
       }
+    });
 
-      if (e.code === 'KeyR') {
-        e.preventDefault();
+    this.inputManager.onRetry(() => {
+      if (this.state === GameState.DEAD) {
         audio.playClick();
         this.startNewRun();
       }
+    });
 
-      if (e.code === 'KeyP' || e.code === 'Escape') {
-        e.preventDefault();
-        audio.playClick();
-        if (this.state === GameState.TUTORIAL) {
-          this.skipTutorial();
-        } else if (this.state === GameState.PLAYING) {
-          this.setState(GameState.PAUSED);
-        } else if (this.state === GameState.PAUSED) {
-          this.setState(GameState.PLAYING);
-        }
-      }
-
-      if (e.code === 'KeyM') {
-        this.toggleSound();
-      }
-
-      if (e.code === 'KeyF') {
-        this.toggleFullscreen();
+    this.inputManager.onPause(() => {
+      audio.playClick();
+      if (this.state === GameState.TUTORIAL) {
+        this.skipTutorial();
+      } else if (this.state === GameState.PLAYING) {
+        this.setState(GameState.PAUSED);
+      } else if (this.state === GameState.PAUSED) {
+        this.setState(GameState.PLAYING);
       }
     });
 
-    window.addEventListener('keyup', (e) => {
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
-        this.inputs.squash = false;
-        this.endSquash();
-      }
+    this.inputManager.onSoundToggle(() => {
+      this.toggleSound();
     });
 
-    const touchJump = document.getElementById('touch-jump-zone');
-    const touchSquash = document.getElementById('touch-squash-zone');
-    const touchDash = document.getElementById('touch-dash-zone');
-
-    if (touchJump) {
-      touchJump.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        this.triggerJump();
-      });
-    }
-
-    if (touchSquash) {
-      touchSquash.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        this.startSquash();
-      });
-      touchSquash.addEventListener('pointerup', (e) => {
-        e.preventDefault();
-        this.endSquash();
-      });
-      touchSquash.addEventListener('pointerleave', (e) => {
-        e.preventDefault();
-        this.endSquash();
-      });
-    }
-
-    if (touchDash) {
-      touchDash.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        this.triggerDash();
-      });
-    }
-
-    const canvasWrap = document.getElementById('game-wrapper');
-    canvasWrap.addEventListener('pointerdown', (e) => {
-      if (this.state === GameState.INTRO_IDLE) {
-        e.preventDefault();
-        this.startCinematicEntrance();
-        return;
-      }
-
-      if (e.target.closest('.ui-overlay') && !e.target.closest('#ready-overlay')) {
-        return;
-      }
-      if (e.target.closest('#mobile-touch-container')) {
-        return;
-      }
-      e.preventDefault();
-      this.triggerJump();
+    this.inputManager.onFullscreenToggle(() => {
+      this.toggleFullscreen();
     });
   }
 

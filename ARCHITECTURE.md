@@ -9,34 +9,45 @@
 ```mermaid
 graph TD
     subgraph Browser Client [Client Runtime]
-        HTML[index.html: Canvas, HUD, 3D Tutorial HUD & Modals]
-        CSS[css/style.css: Arcade Styling, CRT, Hologram Glows]
+        HTML[index.html: Canvas, HUD, Rotate Prompt & Modals]
+        CSS[css/style.css: Responsive Design System, Safe Areas & Touch Controls]
         
-        subgraph Input Layer [Action Input Layer]
-            INP[bindActionInputs: Keyboard + Mobile Touch Zones]
+        subgraph Device Mode Detection [Feature Detection]
+            DET[detectMode: pointer: coarse + Viewport Width]
+            DET -->|body.desktop-ui| D_UI[Desktop Cinematic UI]
+            DET -->|body.mobile-ui| M_UI[Mobile Thumb-Friendly UI]
         end
 
-        subgraph Engine Modules [ES6 Modular Engine]
+        subgraph Input Layer [Unified Action Input Layer: js/input.js]
+            KEY[Keyboard / Mouse: Space, W, S, Shift, Click]
+            TCH[Touch Controls: Jump Zone, Hold Squash, Tap Dash]
+            INP_MGR[InputManager: Action Dispatcher]
+            KEY --> INP_MGR
+            TCH --> INP_MGR
+        end
+
+        subgraph Engine Modules [ES6 Modular Engine - Single Source of Truth]
             CFG[js/config.js: Tunable Constants & Tutorial Settings]
             AUD[js/audio.js: Web Audio Synth: Jump, Dash, Missiles, Tutorial Chimes]
             ROAST[js/roast.js: Multi-Mechanic Roast Engine]
             STRG[js/storage.js: Defensive Local Persistence & Stats Layer]
             LDR[js/leaderboard.js: Local Records Wrapper]
             
-            subgraph Game Engine [js/game.js Core]
+            subgraph Game Engine [js/game.js Core Engine]
                 DIR[Event Director: Pacing & Safety]
-                FSM[Game FSM: Intro, Menu, Tutorial, Play, Dead]
+                FSM[Game FSM: Intro, Menu, Tutorial, Play, Dead, Paused]
                 PHYS[Delta-Time Euler Physics & Jump/Squash/Dash]
                 TUT[Interactive 3D Holographic Training Simulation]
                 INT[Space Interceptor FSM & Predictive Targeting]
                 PROC[Procedural Generator & Rejection Sampling]
                 COLL[AABB Collision & Environmental Demolition]
+                ORIENT[Orientation Safety Monitor: Safe Freeze & Resume]
             end
         end
     end
 
-    HTML --> INP
-    INP --> FSM
+    INP_MGR -->|Unified Actions: JUMP, SQUASH, DASH, PAUSE, RETRY| Game Engine
+    HTML --> INP_MGR
     CSS --> HTML
     CFG --> Game Engine
     CFG --> STRG

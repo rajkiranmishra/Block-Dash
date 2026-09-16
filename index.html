@@ -52,8 +52,20 @@
       <!-- Mobile Touch Controls Overlay -->
       <div id="mobile-touch-container" aria-hidden="true">
         <div id="touch-jump-zone" class="touch-zone-jump" title="Tap to Jump"></div>
-        <div id="touch-squash-zone" class="touch-zone-squash" title="Hold to Squash">▼ SQUASH</div>
-        <div id="touch-dash-zone" class="touch-zone-dash" title="Tap to Dash">⚡ DASH</div>
+        <div id="touch-squash-zone" class="touch-zone-squash" title="Hold to Squash">
+          <span class="touch-icon">▼</span>
+          <span class="touch-label">HOLD SQUASH</span>
+        </div>
+        <div id="touch-dash-zone" class="touch-zone-dash ready" title="Tap to Dash">
+          <div class="dash-cooldown-ring">
+            <svg viewBox="0 0 36 36" class="dash-circular-progress">
+              <path class="dash-circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+              <path id="dash-circle-fill" class="dash-circle-val" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+            </svg>
+          </div>
+          <span class="touch-icon">⚡</span>
+          <span class="touch-label">DASH</span>
+        </div>
       </div>
 
       <!-- In-Game Live HUD -->
@@ -145,10 +157,14 @@
           </button>
         </div>
 
-        <div class="input-hint-grid">
+        <div class="input-hint-grid desktop-only">
           <div class="hint-item"><span class="kbd">SPACE</span> / <span class="kbd">W</span> <span style="color: var(--text-muted)">JUMP</span></div>
           <div class="hint-item"><span class="kbd">S</span> / <span class="kbd">↓</span> <span style="color: var(--text-muted)">SQUASH</span></div>
           <div class="hint-item"><span class="kbd">SHIFT</span> / <span class="kbd">X</span> <span style="color: var(--text-muted)">DASH</span></div>
+        </div>
+
+        <div class="mobile-hint-footer mobile-only">
+          <span>TAP JUMP</span> • <span>HOLD SQUASH</span> • <span>⚡ DASH</span>
         </div>
       </section>
 
@@ -225,7 +241,7 @@
           <button id="btn-pause-restart" class="arcade-btn">RESTART</button>
           <button id="btn-pause-menu" class="arcade-btn">MAIN MENU</button>
         </div>
-        <div class="input-hint-grid" style="margin-top: 14px;"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
+        <div class="input-hint-grid desktop-only" style="margin-top: 14px;"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
       </section>
 
       <!-- 5. DEATH & ROAST OVERLAY -->
@@ -275,7 +291,7 @@
           <button id="btn-death-menu" class="arcade-btn">MENU</button>
         </div>
 
-        <div class="input-hint-grid" style="margin-top: 14px;">
+        <div class="input-hint-grid desktop-only" style="margin-top: 14px;">
           <div class="hint-item"><span class="kbd">SPACE</span> or <span class="kbd">R</span> <span style="color: var(--text-muted)">Instant Retry</span></div>
         </div>
       </section>
@@ -326,6 +342,22 @@
         </div>
       </section>
 
+      <!-- 7. MOBILE PORTRAIT ORIENTATION WARNING OVERLAY -->
+      <section id="rotate-prompt" class="ui-overlay hidden" aria-live="assertive">
+        <div class="rotate-content">
+          <div class="rotate-icon-wrap">
+            <svg class="rotate-phone-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
+            <div class="rotate-arrow">↻</div>
+          </div>
+          <h2 class="rotate-title">BLOCK <span>DASH</span></h2>
+          <div class="rotate-prompt-text">ROTATE DEVICE</div>
+          <p class="rotate-sub">BEST EXPERIENCED IN LANDSCAPE</p>
+        </div>
+      </section>
+
     </div>
   </main>
 
@@ -335,6 +367,7 @@
   <script type="module" src="js/audio.js"></script>
   <script type="module" src="js/roast.js"></script>
   <script type="module" src="js/leaderboard.js"></script>
+  <script type="module" src="js/input.js"></script>
   <script type="module" src="js/game.js"></script>
 </body>
 </html>
