@@ -51,22 +51,39 @@ export const CONFIG = {
     SAFETY_BUFFER: 65,       // Extra reaction distance buffer in px beyond minimum jump arc
     BASE_WIDTH: 40,
     BASE_HEIGHT: 40,
-    FLOATING_BAR_Y: 400,     // Y coordinate for floating bars (clearance ~60px from ground: 460-400=60px; requires squash height 20px)
+    FLOATING_BAR_Y: 400,     // Y coordinate for floating bars
     FLOATING_CROSS_Y: 395,   // Y coordinate for floating hazard crosses
+  },
+
+  // --- Space Interceptor & Event Director Parameters ---
+  INTERCEPTOR: {
+    MIN_SCORE_FOR_EVENT: 500,     // Score before first interceptor encounter can trigger
+    EVENT_COOLDOWN_BASE: 26,     // Minimum seconds between encounter events
+    APPROACH_DURATION: 1.4,      // Fly-in duration from top-right
+    TARGETING_DURATION: 1.8,     // Warning & predictive aiming duration
+    LOCKED_DURATION: 0.45,       // Final locked reticle duration before launch
+    ESCAPE_DURATION: 1.2,        // Hyper-drive fly-away duration
+    RECOVERY_WINDOW: 4.5,        // Breather seconds after escape before dense hazards resume
+    MISSILE_SPEED: 640,          // Projectile forward velocity in px/s
+    PREDICTION_LEAD: 0.35,       // Time (seconds) to project player position forward
+    MISSILE_HITBOX_PADDING: 3,   // Forgiving missile collision padding
   },
 
   // --- Visual & Particle Effects ---
   VISUALS: {
     SHAKE_DURATION_DEATH: 0.45,  // Seconds of screen shake upon death
     SHAKE_INTENSITY_DEATH: 14,   // Max pixel offset during death shake
-    SHAKE_DURATION_JUMP: 0.08,   // Micro-shake on jump for impact feel
+    SHAKE_DURATION_JUMP: 0.08,   // Micro-shake on jump
     SHAKE_INTENSITY_JUMP: 2,
     SHAKE_DURATION_DASH: 0.12,   // Micro-shake on dash
     SHAKE_INTENSITY_DASH: 4,
+    SHAKE_DURATION_MISSILE: 0.22,// Impact shake when missile explodes
+    SHAKE_INTENSITY_MISSILE: 9,
     PARTICLE_COUNT_DEATH: 32,    // Shatter particles generated when player dies
     PARTICLE_COUNT_JUMP: 8,      // Dust particles kicked up on jump
     PARTICLE_COUNT_SQUASH: 5,    // Dust particles kicked up when sliding
     PARTICLE_COUNT_DASH: 12,     // Jet particles on dash
+    PARTICLE_COUNT_EXPLOSION: 22,// Particles when obstacle/missile detonates
     TRAIL_MAX_LENGTH: 10,        // Length of motion blur trail behind player
   },
 
@@ -79,19 +96,23 @@ export const CONFIG = {
 
   // --- Color Palette (Dark Arcade Theme) ---
   COLORS: {
-    BG_DARK: '#0b0c10',
+    BG_DARK: '#050608',
     BG_GRID: '#14161f',
     GROUND_SURFACE: '#ff9f1c',
     GROUND_BODY: '#191b26',
     PLAYER: '#ff9f1c',
-    PLAYER_EYE: '#0b0c10',
+    PLAYER_EYE: '#050608',
     PLAYER_TRAIL: 'rgba(255, 159, 28, 0.25)',
     PLAYER_DASH_TRAIL: 'rgba(0, 245, 212, 0.4)',
     HAZARD_SPIKE: '#ff2a55',
     HAZARD_BLOCK: '#e63946',
     HAZARD_AIR: '#ff007f',
     HAZARD_LASER: '#00f5d4',
-    HAZARD_GLOW: 'rgba(255, 42, 85, 0.4)',
+    INTERCEPTOR_HULL: '#1c2030',
+    INTERCEPTOR_ACCENT: '#ff2a55',
+    INTERCEPTOR_THRUST: '#00f5d4',
+    TARGET_RETICLE: '#ff2a55',
+    TARGET_LINE: 'rgba(255, 42, 85, 0.45)',
     TEXT_LIGHT: '#f3f4f6',
     TEXT_MUTED: '#8892b0',
     ACCENT_AMBER: '#ff9f1c',
@@ -101,7 +122,7 @@ export const CONFIG = {
 
   // --- Supabase Default Config (Browser Safe) ---
   SUPABASE: {
-    URL: '',      // Populate with Supabase Project URL
-    ANON_KEY: '', // Populate with public anon-key (safe for frontend)
+    URL: '',
+    ANON_KEY: '',
   },
 };

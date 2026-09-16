@@ -12,12 +12,16 @@
 5. [Block Squash / Slide Mechanic & Safe Expansion](#5-block-squash--slide-mechanic--safe-expansion)
 6. [Dash Mechanic, Kinematics & Cooldown Balancing](#6-dash-mechanic-kinematics--cooldown-balancing)
 7. [Mid-Air Obstacles & Multi-Mechanic Procedural Generation](#7-mid-air-obstacles--multi-mechanic-procedural-generation)
-8. [AABB Collision Detection & Hitbox Padding](#8-aabb-collision-detection--hitbox-padding)
-9. [Decoupled Action Input Architecture](#9-decoupled-action-input-architecture)
-10. [Context-Aware Roast & Meme Criticism Engine](#10-context-aware-roast--meme-criticism-engine)
-11. [Supabase Identity, Leaderboards & Row Level Security (RLS)](#11-supabase-identity-leaderboards--row-level-security-rls)
-12. [Zero-Dependency Web Audio API Sound Synthesizer](#12-zero-dependency-web-audio-api-sound-synthesizer)
-13. [VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)](#13-viva-questions--technical-answers-professor-mode)
+8. [Space Interceptor Encounter System & Finite State Machine](#8-space-interceptor-encounter-system--finite-state-machine)
+9. [Predictive Targeting Kinematics vs Pure Homing](#9-predictive-targeting-kinematics-vs-pure-homing)
+10. [Missile Variants & World Environmental Demolition](#10-missile-variants--world-environmental-demolition)
+11. [Event Director Architecture & Safety Spacing](#11-event-director-architecture--safety-spacing)
+12. [AABB Collision Detection & Hitbox Padding](#12-aabb-collision-detection--hitbox-padding)
+13. [Decoupled Action Input Architecture](#13-decoupled-action-input-architecture)
+14. [Context-Aware Roast & Meme Criticism Engine](#14-context-aware-roast--meme-criticism-engine)
+15. [Supabase Identity, Leaderboards & Row Level Security (RLS)](#15-supabase-identity-leaderboards--row-level-security-rls)
+16. [Zero-Dependency Web Audio API Sound Synthesizer](#16-zero-dependency-web-audio-api-sound-synthesizer)
+17. [VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)](#17-viva-questions--technical-answers-professor-mode)
 
 ---
 
@@ -184,15 +188,140 @@ $$\Delta x = \text{Effective Speed} \cdot \Delta t$$
 
 ---
 
-## 8. AABB Collision Detection & Hitbox Padding
+---
 
-$$\text{Overlap} \iff (A_x < B_x + B_w) \land (A_x + A_w > B_x) \land (A_y < B_y + B_h) \land (A_y + A_h > B_y)$$
+## 8. Space Interceptor Encounter System & Finite State Machine
 
-With $4\text{px}$ inward coyote padding on the player and $6\text{px}$ on triangular hazards.
+```
+   ┌────────────────────────────────────────────────────────┐
+   │             SPACE INTERCEPTOR FSM LIFECYCLE            │
+   └───────────────────────────┬────────────────────────────┘
+                               │
+                               ▼
+                        ┌──────────────┐
+                        │   INACTIVE   │ (Waiting for Event Director eligibility)
+                        └──────┬───────┘
+                               │ Score >= 500 & Cooldown Elapsed
+                               ▼
+                        ┌──────────────┐
+                        │ APPROACHING  │ (Fly-in from top right, radar warning chime)
+                        └──────┬───────┘
+                               │ Approach timer reaches 1.4s
+                               ▼
+                        ┌──────────────┐
+                        │  TARGETING   │ (Predictive laser reticle tracks lead pos)
+                        └──────┬───────┘
+                               │ Targeting timer reaches 1.8s
+                               ▼
+                        ┌──────────────┐
+                        │    LOCKED    │ (Laser locks static red, high-pitch lock tone)
+                        └──────┬───────┘
+                               │ Locked timer reaches 0.45s
+                               ▼
+                        ┌──────────────┐
+                        │    FIRING    │ (Missile spawns, propulsion muzzle flash)
+                        └──────┬───────┘
+                               │ Missile launched
+                               ▼
+                        ┌──────────────┐
+                        │MISSILE_ACTIVE│ (Missile travels leftwards at 640px/s)
+                        └──────┬───────┘
+                               │ Interceptor hyper-drives off screen (1.2s)
+                               ▼
+                        ┌──────────────┐
+                        │   ESCAPING   │ (Exits top-left with cyan thruster exhaust)
+                        └──────┬───────┘
+                               │ Escape complete
+                               ▼
+                        ┌──────────────┐
+                        │   COOLDOWN   │ (Enforces 26s cooldown + 4.5s breather)
+                        └──────┬───────┘
+                               │ Cooldown elapsed
+                               ▼
+                        ┌──────────────┐
+                        │   INACTIVE   │
+                        └──────────────┘
+```
+
+The Space Interceptor is an original, futuristic hunter drone constructed with an angular stealth silhouette, cyan plasma thrusters, and a pulsed crimson targeting emitter.
 
 ---
 
-## 9. Decoupled Action Input Architecture
+## 9. Predictive Targeting Kinematics vs Pure Homing
+
+### The Inherent Flaw of Pure Homing
+In a 2D single-lane auto-runner, a pure homing projectile that continuously turns toward the player's current coordinate creates mathematically unsolvable scenarios:
+- If the player jumps, the missile turns upward.
+- If the player squashes, the missile descends.
+- The player has no physical dimension in which to step aside, making evasion feel like an arbitrary coin toss.
+
+### The Predictive Targeting Formula
+Instead of tracking the player's *current* position, the interceptor's onboard targeting computer estimates the player's *future intercept point* using lead-time kinematics:
+
+$$y_{\text{target}} = y_{\text{player}} + (v_{y,\text{player}} \cdot t_{\text{lead}})$$
+
+Where:
+- $y_{\text{player}}$ = Player current vertical coordinate
+- $v_{y,\text{player}}$ = Player vertical velocity (negative when rising, positive when falling)
+- $t_{\text{lead}} = 0.35\,\text{s}$ (configurable in `CONFIG.INTERCEPTOR.PREDICTION_LEAD`)
+- Clamped: $y_{\text{clamped}} = \max\left(260, \min(y_{\text{ground}} - 20, y_{\text{target}})\right)$
+
+### Tactical Player Baiting & Exploitation
+Because targeting locks $0.45\,\text{s}$ before firing, a skilled player can:
+1. **Bait a High Lock**: Jump early during the `TARGETING` phase $\to$ Reticle locks high in mid-air $\to$ Player lands and slides safely underneath.
+2. **Bait a Ground Lock**: Stay grounded during `TARGETING` $\to$ Reticle locks on the floor $\to$ Player jumps cleanly over the incoming ground rocket.
+
+This shifts the gameplay from random panic to **observation $\to$ prediction $\to$ manipulation $\to$ execution**.
+
+---
+
+## 10. Missile Variants & World Environmental Demolition
+
+### Multi-Variant Missile Types
+
+| Missile Variant | Trajectory & Behavior | Intended Player Reaction | Difficulty Tier |
+| :--- | :--- | :--- | :--- |
+| **Ground Skimmer** | Fires directly along ground plane ($y \approx 425\,\text{px}$) at $640\,\text{px/s}$. | **JUMP** | Mid-game ($\text{Score} \ge 500$) |
+| **High Barrier** | Fires at standing cube height ($y \approx 390\,\text{px}$) at $640\,\text{px/s}$. | **SQUASH / SLIDE** | Hard ($\text{Score} \ge 1100$) |
+| **Tracking Seeker** | Nudges vertical angle toward player for first $0.35\,\text{s}$, then locks trajectory. | **DASH** / Precision Timing | Hell ($\text{Score} \ge 1800$) |
+
+### Emergent Missile-World Interactions (Obstacle Demolition)
+Missiles are dual-purpose entities: they are both lethal hazards to the player and high-yield explosive projectiles in the game world.
+- If an active missile passes the player without colliding, its bounding box continues into the obstacle array.
+- When an AABB overlap occurs between `missile` and `obstacle`:
+  1. The obstacle is instantly shattered (`obstacle.active = false`).
+  2. A vibrant particle shockwave and sound FX trigger.
+  3. The player is awarded $+150$ **Obstacle Demolition Points** with a celebratory float text (`+150 DEMOLITION`).
+  
+Skilled speedrunners can intentionally bait interceptor missiles into clearing dense spike clusters ahead of them.
+
+---
+
+## 11. Event Director Architecture & Safety Spacing
+
+To ensure the game remains brutally hard but **100% fair**, the `EventDirector` governs encounters through strict safety rules:
+
+1. **Eligibility Filter**:
+   - `score >= CONFIG.INTERCEPTOR.MIN_SCORE_FOR_EVENT` ($500\,\text{pts}$)
+   - `cooldownTimer <= 0` ($26\,\text{s}$ base interval)
+   - `player.isGrounded === true` (encounters never start while the player is in panic mid-air)
+2. **Procedural Hazard Suppression**:
+   - While the Interceptor is in `APPROACHING`, `TARGETING`, `LOCKED`, or `FIRING`, the procedural generator suspends multi-action hazard clusters, spawning only sparse single spikes or open ground.
+   - Prevents impossible combinations (e.g., ground spike + floating laser + missile + gate in the same $0.5\text{s}$ window).
+3. **Recovery Breather Window**:
+   - After the Interceptor escapes, a $4.5\,\text{s}$ recovery window prevents dense hazard generation, allowing the player to regain rhythm.
+
+---
+
+## 12. AABB Collision Detection & Hitbox Padding
+
+$$\text{Overlap} \iff (A_x < B_x + B_w) \land (A_x + A_w > B_x) \land (A_y < B_y + B_h) \land (A_y + A_h > B_y)$$
+
+With $4\text{px}$ inward coyote padding on the player, $6\text{px}$ on triangular hazards, and $3\text{px}$ on interceptor missiles.
+
+---
+
+## 13. Decoupled Action Input Architecture
 
 Physical hardware events are decoupled from gameplay logic via an Action Layer:
 ```
@@ -209,9 +338,14 @@ Mobile (Right Touch Zone) ──┴──► Action: DASH (Triggered)
 
 ---
 
-## 10. Context-Aware Roast & Meme Criticism Engine
+## 14. Context-Aware Roast & Meme Criticism Engine
 
 Analyzes telemetry to categorize deaths:
+- `MISSILE_DEATH`: Shot down by standard hunter drone missile.
+- `FAILED_TO_JUMP_MISSILE`: Hit by ground missile while standing.
+- `FAILED_TO_SQUASH_MISSILE`: Hit by high missile while standing.
+- `DASHED_INTO_MISSILE`: Dashed head-on into an incoming missile warhead.
+- `REPEATED_MISSILE_DEATH`: 3+ deaths to the Space Interceptor.
 - `FAILED_TO_SQUASH`: Hit by floating laser without squashing.
 - `DASHED_INTO_OBSTACLE`: Died while `isDashing === true`.
 - `FIRST_OBSTACLE`: Died on obstacle #1.
@@ -220,7 +354,7 @@ Analyzes telemetry to categorize deaths:
 
 ---
 
-## 11. Supabase Identity, Leaderboards & Row Level Security (RLS)
+## 15. Supabase Identity, Leaderboards & Row Level Security (RLS)
 
 - Anonymous authentication via `supabase.auth.signInAnonymously()`.
 - RLS policy: users can only write to rows where `auth.uid() = user_id`.
@@ -228,7 +362,7 @@ Analyzes telemetry to categorize deaths:
 
 ---
 
-## 12. Zero-Dependency Web Audio API Sound Synthesizer
+## 16. Zero-Dependency Web Audio API Sound Synthesizer
 
 Native Web Audio API oscillators synthesize:
 - `playJump()`: Upward square frequency sweep (180Hz $\to$ 480Hz).
@@ -237,10 +371,14 @@ Native Web Audio API oscillators synthesize:
 - `playDash()`: Sonic bandpass noise jet burst + pitch sweep.
 - `playDashReady()`: High-pitch harmonic chirp.
 - `playDeath()`: White-noise explosion + bitcrush crunch.
+- `playTargetBeep(pitch)`: Progressive radar ping (440Hz $\to$ 880Hz).
+- `playJetFlyby()`: High-speed Doppler swept lowpass filtered drone whoosh.
+- `playMissileLaunch()`: High-pressure pneumatic ignition rocket pulse.
+- `playMissileDetonate()`: Explosive resonant sub-bass blast.
 
 ---
 
-## 13. VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)
+## 17. VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)
 
 ### Q1: Why did Retry previously resume near the death position?
 - **Simple Answer**: The retry button changed the game state to Playing but forgot to reset the obstacle list, speed, score, and player position.
@@ -250,7 +388,7 @@ Native Web Audio API oscillators synthesize:
 
 ### Q2: What variables must be reset between game runs vs. persisted?
 - **Simple Answer**: The player position, speed, score, obstacles, and particles must reset. Personal best, username, audio preferences, and global ranking must stay saved.
-- **Technical Answer**: Per-run transient state ($x, y, v_y, \text{isSquashing}, \text{isDashing}, \text{score}, \text{speed}, \text{obstacles}, \text{particles}$) must be re-instantiated. Persistent session state ($\text{personalBest}, \text{playerName}, \text{audioMuteState}, \text{sessionAttempts}, \text{authToken}$) is stored in closure memory and `localStorage` and must never be cleared across runs.
+- **Technical Answer**: Per-run transient state ($x, y, v_y, \text{isSquashing}, \text{isDashing}, \text{score}, \text{speed}, \text{obstacles}, \text{particles}, \text{interceptorState}, \text{missiles}$) must be re-instantiated. Persistent session state ($\text{personalBest}, \text{playerName}, \text{audioMuteState}, \text{sessionAttempts}, \text{authToken}$) is stored in closure memory and `localStorage` and must never be cleared across runs.
 
 ---
 
@@ -289,3 +427,34 @@ Native Web Audio API oscillators synthesize:
 ### Q8: Why separate hardware keys from gameplay actions in the input system?
 - **Simple Answer**: It allows desktop keys, mouse clicks, and mobile touch buttons to control the same game actions without duplicating code.
 - **Technical Answer**: The Action Pattern establishes an abstraction layer between input sources (Keyboard events, Pointer events, Touch coordinates) and gameplay state handlers (`triggerJump()`, `startSquash()`, `triggerDash()`), allowing seamless cross-platform input mapping and testability.
+
+---
+
+### Q9: Why does the Space Interceptor use predictive targeting instead of perfect homing?
+- **Simple Answer**: Perfect homing missiles follow you no matter what you do, which makes dodging impossible in a 2D running game. Predictive targeting calculates where you will be, so smart players can fake out the drone and dodge.
+- **Technical Answer**: In a constrained 2D plane, continuous homing removes player agency because changing position does not create an evasion vector. Predictive targeting ($y_{\text{target}} = y_{\text{pos}} + v_y \cdot t_{\text{lead}}$) locks trajectory before launch, rewarding players who recognize the telegraph and intentionally bait the targeting reticle into bad angles.
+
+---
+
+### Q10: How is the Interceptor implemented without messy boolean flags?
+- **Simple Answer**: We use a clear 8-state machine where the drone can only be in one state at a time (Approaching, Targeting, Locked, Firing, Escaping, etc.).
+- **Technical Answer**: The interceptor lifecycle is governed by an explicit Finite State Machine (FSM) enum (`INACTIVE`, `APPROACHING`, `TARGETING`, `LOCKED`, `FIRING`, `MISSILE_ACTIVE`, `ESCAPING`, `COOLDOWN`). Each state has strictly defined enter/update/exit transitions driven by delta-time timers, eliminating race conditions and state desynchronization.
+
+---
+
+### Q11: How does the Event Director prevent impossible hazard combinations?
+- **Simple Answer**: The game director tells the ground obstacle spawner to take a break while the interceptor is attacking, so you don't get trapped by three hazards at once.
+- **Technical Answer**: The `EventDirector` coordinates with the procedural generator. During active interceptor phases, complex multi-action hazard generation is throttled, permitting only low-density ground hazards. Furthermore, a $4.5\text{s}$ post-escape recovery window prevents immediate high-density obstacle bursts.
+
+---
+
+### Q12: How does emergent missile-obstacle demolition work, and why is it good game design?
+- **Simple Answer**: If you dodge a missile, it can crash into a spike ahead of you and blow it up, giving you extra points.
+- **Technical Answer**: Missiles maintain active AABB collision checks against the obstacle collection. On intersection, both the missile and target obstacle detonate, granting $+150$ bonus points. This transforms the missile from a pure threat into a tactical risk/reward tool for skilled players.
+
+---
+
+### Q13: How does the game render the Space Interceptor without 3D library performance overhead?
+- **Simple Answer**: It draws the futuristic spaceship directly on the 2D canvas with crisp geometric vector paths, glowing engine trails, and targeting lasers at a buttery 60+ FPS.
+- **Technical Answer**: The craft is rendered procedurally via Canvas 2D path transforms (`ctx.save()`, `ctx.beginPath()`, `ctx.lineTo()`, `ctx.arc()`, `ctx.restore()`) using hardware-accelerated 2D canvas blending. This delivers high-fidelity futuristic visuals with zero WebGL draw-call or memory overhead.
+

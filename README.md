@@ -15,12 +15,14 @@ An arcade runner built with vanilla web technologies, delta-time physics, block 
 
 ## ⚡ Core Mechanics
 
-1. **JUMP**: Leap over ground spikes, solid blocks, and step hazards.
-2. **SQUASH / SLIDE**: Compress to $50\%$ height with ground anchoring to slide under floating laser bars and overhead crosses. Includes safe uncrouch checks so you never expand into an obstacle.
-3. **DASH**: Controlled $1.85\times$ speed burst for $0.22\text{s}$ with a $1.2\text{s}$ tactical cooldown to cross wide hazard gaps and energy gates.
-4. **Bug-Free Instant Retry**: Full run state reset (<16ms) restarts the game fresh from the beginning every single time.
-5. **Procedural Multi-Mechanic Difficulty**: Dynamic progression introducing mechanics gradually (Jump $\to$ Squash $\to$ Dash $\to$ Combinations) with mathematical reachability guarantees.
-6. **Context-Aware Roast Engine**: Post-death critique analyzing survival time, obstacle type, and missed squash/dash opportunities.
+1. **JUMP**: Leap over ground spikes, solid blocks, step hazards, and low-skimming interceptor ground missiles.
+2. **SQUASH / SLIDE**: Compress to $50\%$ height with ground anchoring to slide under floating laser bars and high-altitude interceptor missiles. Includes safe uncrouch checks so you never expand into an obstacle.
+3. **DASH**: Controlled $1.85\times$ speed burst for $0.22\text{s}$ with a $1.2\text{s}$ tactical cooldown to cross wide hazard gaps, energy gates, or out-maneuver tracking missiles.
+4. **SPACE INTERCEPTOR ENCOUNTER**: An original hunter drone with an 8-stage Finite State Machine (`APPROACHING` $\to$ `TARGETING` $\to$ `LOCKED` $\to$ `FIRING` $\to$ `ESCAPING`). Uses kinematic predictive targeting ($y = y_0 + v_y \cdot t_{\text{lead}}$) so skilled players can bait and manipulate the drone's firing vector.
+5. **EMERGENT OBSTACLE DEMOLITION**: Missiles that miss the player collide with downstream spikes and blocks, detonating them and awarding $+150$ demolition bonus points.
+6. **EVENT DIRECTOR & FAIRNESS**: Throttles procedural hazard generation during active interceptor encounters and enforces a $4.5\text{s}$ post-escape breather window.
+7. **Bug-Free Instant Retry**: Full run state reset (<16ms) wipes 100% of transient run state (player physics, obstacles, missiles, timers) fresh every single time.
+8. **Context-Aware Roast Engine**: Post-death critique analyzing survival time, obstacle type, and missed squash/dash/jump opportunities against drones and lasers.
 
 ---
 

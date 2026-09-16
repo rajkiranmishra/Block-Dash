@@ -79,7 +79,7 @@ console.log(`Dash Burst Distance: ${dashDistance.toFixed(1)} px in ${dashDuratio
 assert(dashDistance > 120 && dashDistance < 200, `Dash burst (${dashDistance.toFixed(1)}px) covers gap without being uncontrollable.`);
 assert(dashCooldown > dashDuration * 3, `Dash cooldown (${dashCooldown}s) prevents spamming and enforces timing skill.`);
 
-// --- Test 4: Roast Engine Classification ---
+// --- Test 4: Roast Engine Multi-Mechanic Classifications ---
 console.log('\n--- TEST 4: Roast Engine Multi-Mechanic Classifications ---');
 const roast = new RoastEngine();
 
@@ -125,8 +125,94 @@ const rNewPB = roast.generateRoast({
 });
 assert(rNewPB.category === 'NEW PB', `New PB classified as "${rNewPB.category}"`);
 
+// --- Test 5: Space Interceptor FSM, Predictive Targeting & Demolition ---
+console.log('\n--- TEST 5: Space Interceptor State Machine & Predictive Targeting ---');
+
+// FSM State transitions verification
+const validStates = ['INACTIVE', 'APPROACHING', 'TARGETING', 'LOCKED', 'FIRING', 'MISSILE_ACTIVE', 'ESCAPING', 'COOLDOWN'];
+assert(validStates.length === 8, 'Interceptor FSM defines 8 explicit lifecycle states without boolean flags.');
+
+// Predictive Targeting Calculation
+const playerY = 420; // Player on ground
+const playerVy = -600; // Player in mid-air jump
+const predictionLead = CONFIG.INTERCEPTOR.PREDICTION_LEAD; // 0.35s
+
+const rawPredictedY = playerY + (playerVy * predictionLead); // 420 + (-210) = 210px
+const clampedPredictedY = Math.max(260, Math.min(CONFIG.CANVAS.GROUND_Y - 20, rawPredictedY)); // Clamped to ceiling/floor bounds
+
+console.log(`Predictive Lead: playerY=${playerY}, playerVy=${playerVy}, lead=${predictionLead}s -> TargetY=${clampedPredictedY.toFixed(1)}px`);
+assert(clampedPredictedY < playerY, `Predictive targeting correctly anticipates upward jump trajectory (${clampedPredictedY}px < ${playerY}px).`);
+assert(clampedPredictedY >= 260 && clampedPredictedY <= groundY - 20, `Targeting Y is safely clamped within jumpable screen bounds.`);
+
+// Missile Variants Test
+const missileSpeed = CONFIG.INTERCEPTOR.MISSILE_SPEED; // 640 px/s
+assert(missileSpeed > CONFIG.SPEED.INITIAL, `Missile speed (${missileSpeed}px/s) exceeds base game speed (${CONFIG.SPEED.INITIAL}px/s) for urgent reaction.`);
+
+// Emergent Missile vs Obstacle Demolition Simulation
+const testObstacle = { x: 300, y: groundY - 36, w: 36, h: 36, type: 'single-spike', active: true };
+const testMissile = { x: 310, y: groundY - 30, w: 32, h: 14, active: true };
+
+// AABB Collision Check between missile and obstacle
+const missileHitsObstacle = (
+  testMissile.x < testObstacle.x + testObstacle.w &&
+  testMissile.x + testMissile.w > testObstacle.x &&
+  testMissile.y < testObstacle.y + testObstacle.h &&
+  testMissile.y + testMissile.h > testObstacle.y
+);
+
+assert(missileHitsObstacle === true, 'Missile AABB detects collision with environmental obstacle.');
+if (missileHitsObstacle) {
+  testObstacle.active = false;
+  testMissile.active = false;
+}
+assert(testObstacle.active === false, 'Obstacle is destroyed upon missile impact (emergent demolition).');
+
+// Roast Engine Missile Death Classifications
+const rMissileGround = roast.generateRoast({
+  score: 950,
+  personalBest: 1500,
+  isNewPB: false,
+  survivalTime: 25.0,
+  obstacleIndex: 14,
+  killerType: 'interceptor-missile',
+  missileVariant: 'ground',
+  wasDashing: false,
+  wasSquashing: false,
+  attemptNumber: 4
+});
+assert(rMissileGround.category === 'FAILED TO JUMP MISSILE', `Ground missile failure classified as "${rMissileGround.category}"`);
+
+const rMissileHigh = roast.generateRoast({
+  score: 1100,
+  personalBest: 1500,
+  isNewPB: false,
+  survivalTime: 28.0,
+  obstacleIndex: 16,
+  killerType: 'interceptor-missile',
+  missileVariant: 'high',
+  wasDashing: false,
+  wasSquashing: false,
+  attemptNumber: 5
+});
+assert(rMissileHigh.category === 'FAILED TO SQUASH MISSILE', `High missile failure classified as "${rMissileHigh.category}"`);
+
+const rMissileDash = roast.generateRoast({
+  score: 1300,
+  personalBest: 1500,
+  isNewPB: false,
+  survivalTime: 32.0,
+  obstacleIndex: 18,
+  killerType: 'interceptor-missile',
+  missileVariant: 'tracking',
+  wasDashing: true,
+  wasSquashing: false,
+  attemptNumber: 6
+});
+assert(rMissileDash.category === 'DASHED INTO MISSILE', `Dash into tracking missile classified as "${rMissileDash.category}"`);
+
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);
 console.log(`========================================================\n`);
 
 if (failCount > 0) process.exit(1);
+

@@ -3,17 +3,15 @@
  * BLOCK DASH - Core Game Engine
  * "One button. One endless level. No excuses."
  *
- * Cinematic Entrance & Game Loop:
+ * Advanced Gameplay Systems:
+ * - Space Interceptor Hunter Drone Encounter & Predictive Targeting
+ * - Multi-Variant Missiles (Ground, High Laser, Tracking)
+ * - Missile vs World Emergent Obstacle Demolition (+150 Bonus)
+ * - Event Director with Spawning Safety & Recovery Breather Windows
  * - 3D Starfield Warp & Hyperspace Camera Projection
- * - 3D Rotating Cube Entrance, Screen Slide & Ground Slam
- * - Interactive 4-Button Menu: Play, Leaderboard, How To Play, Settings
- * - Seamless Jump Transition from Menu to Live Gameplay
- * - Delta-Time Euler Physics & Constant Acceleration Gravity
- * - Block Squash / Slide with Safe Uncrouch Checks
- * - Dash Ability with Cooldowns, Jet Trails, & Delta-Time Independence
- * - Mid-Air Obstacles (Floating Bars, Crosses, Energy Gates)
+ * - Delta-Time Euler Physics, Jump, Squash/Slide & Dash Burst
  * - Constraint-Aware Procedural Generation & Multi-Mechanic Fairness
- * - AABB Collision Detection with Forgiving Coyote Insets
+ * - AABB Collision Detection with Coyote Insets
  * ==============================================================================
  */
 
@@ -24,14 +22,25 @@ import { leaderboard } from './leaderboard.js';
 
 // --- Game State Enum ---
 export const GameState = Object.freeze({
-  INTRO_IDLE: 'INTRO_IDLE',         // Almost black screen, gentle star twinkle, [CLICK TO ENTER]
-  INTRO_WARP: 'INTRO_WARP',         // Hyperspace warp, 3D rotating cube zooms from deep screen
-  INTRO_SLAM: 'INTRO_SLAM',         // Cube slides across screen and slams onto ground with shockwave
-  MENU: 'MENU',                     // Main Menu (Play, Leaderboard, Guide, Settings)
-  TRANSITION_PLAY: 'TRANSITION_PLAY',// Cube jumps from menu directly into running game
+  INTRO_IDLE: 'INTRO_IDLE',
+  INTRO_WARP: 'INTRO_WARP',
+  INTRO_SLAM: 'INTRO_SLAM',
+  MENU: 'MENU',
   PLAYING: 'PLAYING',
   PAUSED: 'PAUSED',
   DEAD: 'DEAD',
+});
+
+// --- Space Interceptor State Enum ---
+export const InterceptorState = Object.freeze({
+  INACTIVE: 'INACTIVE',
+  APPROACHING: 'APPROACHING',
+  TARGETING: 'TARGETING',
+  LOCKED: 'LOCKED',
+  FIRING: 'FIRING',
+  MISSILE_ACTIVE: 'MISSILE_ACTIVE',
+  ESCAPING: 'ESCAPING',
+  COOLDOWN: 'COOLDOWN',
 });
 
 class GameEngine {
@@ -77,6 +86,7 @@ class GameEngine {
     this.survivalTime = 0;
     this.obstacleCounter = 0;
     this.lastKillerType = 'single-spike';
+    this.lastMissileVariant = null;
     this.lastMilestone = 0;
 
     // Player Entity
@@ -95,6 +105,35 @@ class GameEngine {
       dashCooldownTimer: 0,
       trail: [],
     };
+
+    // --- Space Interceptor & Event Director ---
+    this.interceptor = {
+      state: InterceptorState.INACTIVE,
+      x: this.virtualWidth + 100,
+      y: 120,
+      targetX: 740,
+      targetY: 160,
+      w: 68,
+      h: 32,
+      timer: 0,
+      beepTimer: 0,
+      beepInterval: 0.38,
+      missileType: 'ground',
+      aimX: 0,
+      aimY: 0,
+      isLocked: false,
+      thrusterPulse: 0,
+    };
+
+    this.eventDirector = {
+      cooldownTimer: CONFIG.INTERCEPTOR.EVENT_COOLDOWN_BASE,
+      recoveryTimer: 0,
+      isEventActive: false,
+      encounterCount: 0,
+    };
+
+    this.missiles = [];
+    this.floatingTexts = [];
 
     // World & Environment
     this.obstacles = [];
@@ -160,7 +199,6 @@ class GameEngine {
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
 
-    // Generate 3D Starfield for Warp Intro
     for (let i = 0; i < this.numWarpStars; i++) {
       this.warpStars.push({
         x: (Math.random() - 0.5) * this.virtualWidth * 2,
@@ -180,13 +218,9 @@ class GameEngine {
 
     this.setState(GameState.INTRO_IDLE);
 
-    // Launch Delta-Time Game Loop
     requestAnimationFrame((time) => this.loop(time));
   }
 
-  /**
-   * High-DPI & Responsive Aspect-Ratio Canvas Resizer
-   */
   resizeCanvas() {
     const wrapper = document.getElementById('game-wrapper');
     const rect = wrapper.getBoundingClientRect();
@@ -207,7 +241,6 @@ class GameEngine {
     if (this.state === newState) return;
     this.state = newState;
 
-    // Hide all overlays by default
     this.dom.introOverlay.classList.add('hidden');
     this.dom.menuOverlay.classList.add('hidden');
     this.dom.guideOverlay.classList.add('hidden');
@@ -235,10 +268,6 @@ class GameEngine {
         this.resetRun();
         break;
 
-      case GameState.TRANSITION_PLAY:
-        this.dom.hud.classList.remove('hidden');
-        break;
-
       case GameState.PLAYING:
         this.dom.hud.classList.remove('hidden');
         break;
@@ -256,9 +285,6 @@ class GameEngine {
     }
   }
 
-  /**
-   * Triggered on user click during INTRO_IDLE: Unlocks audio, launches 3D star warp & boom!
-   */
   startCinematicEntrance() {
     audio.init();
     audio.playCinematicBoom();
@@ -284,6 +310,19 @@ class GameEngine {
     this.player.dashCooldownTimer = 0;
     this.player.trail = [];
 
+    // Reset Interceptor & Missiles
+    this.interceptor.state = InterceptorState.INACTIVE;
+    this.interceptor.x = this.virtualWidth + 120;
+    this.interceptor.y = 120;
+    this.interceptor.timer = 0;
+    this.interceptor.isLocked = false;
+    this.missiles = [];
+    this.floatingTexts = [];
+
+    this.eventDirector.cooldownTimer = CONFIG.INTERCEPTOR.EVENT_COOLDOWN_BASE;
+    this.eventDirector.recoveryTimer = 0;
+    this.eventDirector.isEventActive = false;
+
     this.obstacles = [];
     this.particles = [];
     this.groundOffset = 0;
@@ -295,6 +334,7 @@ class GameEngine {
     this.obstacleCounter = 0;
     this.currentSpeed = CONFIG.SPEED.INITIAL;
     this.lastMilestone = 0;
+    this.lastMissileVariant = null;
     this.shakeTime = 0;
     this.shakeDuration = 0;
 
@@ -305,9 +345,6 @@ class GameEngine {
     this.dom.hudDashFill.className = 'dash-fill ready';
   }
 
-  /**
-   * Starts a brand new run with an anticipatory jump leap from the menu
-   */
   startNewRun() {
     audio.init();
     this.sessionAttempts++;
@@ -316,9 +353,6 @@ class GameEngine {
     this.executeJumpImpulse();
   }
 
-  /**
-   * Action: Jump Trigger
-   */
   triggerJump() {
     audio.init();
 
@@ -347,7 +381,6 @@ class GameEngine {
 
     this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_JUMP, CONFIG.VISUALS.SHAKE_DURATION_JUMP);
 
-    // Dust particles
     for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_JUMP; i++) {
       this.particles.push({
         x: this.player.x + Math.random() * this.player.w,
@@ -363,9 +396,6 @@ class GameEngine {
     }
   }
 
-  /**
-   * Action: Squash / Slide Start
-   */
   startSquash() {
     if (this.state !== GameState.PLAYING) return;
     if (this.player.isSquashing) return;
@@ -381,7 +411,6 @@ class GameEngine {
       this.player.y = this.groundY - this.player.h;
     }
 
-    // Slide dust
     for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_SQUASH; i++) {
       this.particles.push({
         x: this.player.x + Math.random() * this.player.w,
@@ -397,9 +426,6 @@ class GameEngine {
     }
   }
 
-  /**
-   * Action: Squash / Slide End with Safe Uncrouch Check
-   */
   endSquash() {
     if (!this.player.isSquashing) return;
 
@@ -441,9 +467,6 @@ class GameEngine {
     }
   }
 
-  /**
-   * Action: Dash Trigger
-   */
   triggerDash() {
     if (this.state !== GameState.PLAYING) return;
     if (this.player.isDashing || this.player.dashCooldownTimer > 0) return;
@@ -455,7 +478,6 @@ class GameEngine {
 
     this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_DASH, CONFIG.VISUALS.SHAKE_DURATION_DASH);
 
-    // Dash Jet Particles
     for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_DASH; i++) {
       this.particles.push({
         x: this.player.x - 5,
@@ -477,14 +499,10 @@ class GameEngine {
     this.shakeTime = duration;
   }
 
-  /**
-   * Handles collision / player death event
-   */
   async handleDeath() {
     audio.playDeath();
     this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_DEATH, CONFIG.VISUALS.SHAKE_DURATION_DEATH);
 
-    // Shatter Player
     for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_DEATH; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 320 + 80;
@@ -511,7 +529,6 @@ class GameEngine {
       audio.playNewPB();
     }
 
-    // Context Roast
     const roast = roastEngine.generateRoast({
       score: finalScore,
       personalBest: pbBefore,
@@ -519,6 +536,7 @@ class GameEngine {
       survivalTime: this.survivalTime,
       obstacleIndex: this.obstacleCounter,
       killerType: this.lastKillerType,
+      missileVariant: this.lastMissileVariant,
       wasDashing: this.player.isDashing,
       wasSquashing: this.player.isSquashing,
       attemptNumber: this.sessionAttempts
@@ -539,18 +557,378 @@ class GameEngine {
   }
 
   /**
-   * Constraint-Aware Procedural Generation
+   * ============================================================================
+   * SPACE INTERCEPTOR ENCOUNTER & EVENT DIRECTOR
+   * ============================================================================
+   */
+  updateEventDirector(dt) {
+    // 1. Manage Cooldown & Recovery
+    if (this.eventDirector.recoveryTimer > 0) {
+      this.eventDirector.recoveryTimer -= dt;
+    }
+
+    if (!this.eventDirector.isEventActive) {
+      this.eventDirector.cooldownTimer -= dt;
+
+      // Check encounter eligibility
+      if (
+        this.score >= CONFIG.INTERCEPTOR.MIN_SCORE_FOR_EVENT &&
+        this.eventDirector.cooldownTimer <= 0 &&
+        this.eventDirector.recoveryTimer <= 0
+      ) {
+        this.triggerInterceptorEncounter();
+      }
+    }
+
+    // 2. Interceptor State Machine
+    this.updateInterceptor(dt);
+    this.updateMissiles(dt);
+  }
+
+  triggerInterceptorEncounter() {
+    this.eventDirector.isEventActive = true;
+    this.eventDirector.encounterCount++;
+    const jet = this.interceptor;
+
+    jet.state = InterceptorState.APPROACHING;
+    jet.x = this.virtualWidth + 120;
+    jet.y = 80;
+    jet.timer = 0;
+    jet.isLocked = false;
+
+    // Pick missile variant based on progression
+    if (this.score < 900) {
+      jet.missileType = 'ground'; // Early encounter: ground missile (teaches JUMP)
+    } else if (this.score < 1800) {
+      jet.missileType = Math.random() > 0.4 ? 'high' : 'ground'; // Teaches SQUASH
+    } else {
+      const variants = ['ground', 'high', 'tracking'];
+      jet.missileType = variants[Math.floor(Math.random() * variants.length)];
+    }
+
+    audio.playJetFlyby();
+  }
+
+  updateInterceptor(dt) {
+    const jet = this.interceptor;
+    if (jet.state === InterceptorState.INACTIVE) return;
+
+    jet.timer += dt;
+    jet.thrusterPulse = (jet.thrusterPulse + dt * 12) % (Math.PI * 2);
+
+    switch (jet.state) {
+      case InterceptorState.APPROACHING: {
+        // Fly smoothly in from top-right towards hover station
+        const progress = Math.min(1, jet.timer / CONFIG.INTERCEPTOR.APPROACH_DURATION);
+        jet.x = (this.virtualWidth + 120) + (jet.targetX - (this.virtualWidth + 120)) * Math.sin(progress * Math.PI * 0.5);
+        jet.y = 80 + (jet.targetY - 80) * Math.sin(progress * Math.PI * 0.5);
+
+        if (progress >= 1) {
+          jet.state = InterceptorState.TARGETING;
+          jet.timer = 0;
+          jet.beepTimer = 0;
+          jet.beepInterval = 0.42;
+        }
+        break;
+      }
+
+      case InterceptorState.TARGETING: {
+        // Hover and predict player position
+        jet.y = jet.targetY + Math.sin(jet.timer * 4) * 8;
+
+        // Predictive Targeting Calculation:
+        // Aim point depends on missile type
+        if (jet.missileType === 'ground') {
+          jet.aimX = this.player.x + 30;
+          jet.aimY = this.groundY - 18; // Skims floor -> Must Jump
+        } else if (jet.missileType === 'high') {
+          jet.aimX = this.player.x + 30;
+          jet.aimY = this.groundY - 36; // Head-height -> Must Squash
+        } else {
+          // Tracking: aims at dynamic player centroid
+          jet.aimX = this.player.x + 20;
+          jet.aimY = this.player.y + this.player.h / 2;
+        }
+
+        // Radar Beeping cadence accelerates as lock approaches
+        jet.beepTimer += dt;
+        if (jet.beepTimer >= jet.beepInterval) {
+          jet.beepTimer = 0;
+          const progress = jet.timer / CONFIG.INTERCEPTOR.TARGETING_DURATION;
+          jet.beepInterval = Math.max(0.12, 0.42 - progress * 0.3);
+          const freq = 750 + progress * 550;
+          audio.playTargetBeep(freq, false);
+        }
+
+        if (jet.timer >= CONFIG.INTERCEPTOR.TARGETING_DURATION) {
+          jet.state = InterceptorState.LOCKED;
+          jet.timer = 0;
+          jet.isLocked = true;
+          audio.playTargetBeep(1480, true); // Solid lock tone
+        }
+        break;
+      }
+
+      case InterceptorState.LOCKED: {
+        // Final locked hold right before firing
+        jet.y = jet.targetY + Math.sin(jet.timer * 4) * 6;
+
+        if (jet.timer >= CONFIG.INTERCEPTOR.LOCKED_DURATION) {
+          this.fireMissile();
+          jet.state = InterceptorState.FIRING;
+          jet.timer = 0;
+        }
+        break;
+      }
+
+      case InterceptorState.FIRING: {
+        // Recoil kickback on launch
+        jet.x = jet.targetX + Math.sin(jet.timer * Math.PI) * 15;
+
+        if (jet.timer >= 0.3) {
+          jet.state = InterceptorState.ESCAPING;
+          jet.timer = 0;
+          audio.playJetFlyby();
+        }
+        break;
+      }
+
+      case InterceptorState.ESCAPING: {
+        // Hyper-drive acceleration off the top-left/top-right
+        const progress = Math.min(1, jet.timer / CONFIG.INTERCEPTOR.ESCAPE_DURATION);
+        jet.x += dt * 700;
+        jet.y -= dt * 350;
+
+        // Exhaust plume particles
+        if (Math.random() < 0.7) {
+          this.particles.push({
+            x: jet.x - 20,
+            y: jet.y + jet.h / 2,
+            vx: -Math.random() * 300 - 150,
+            vy: (Math.random() - 0.5) * 50,
+            size: Math.random() * 6 + 3,
+            color: CONFIG.COLORS.INTERCEPTOR_THRUST,
+            alpha: 1,
+            life: 0.3,
+            maxLife: 0.3
+          });
+        }
+
+        if (progress >= 1 || jet.x > this.virtualWidth + 200) {
+          jet.state = InterceptorState.COOLDOWN;
+          this.eventDirector.isEventActive = false;
+          this.eventDirector.cooldownTimer = CONFIG.INTERCEPTOR.EVENT_COOLDOWN_BASE;
+          this.eventDirector.recoveryTimer = CONFIG.INTERCEPTOR.RECOVERY_WINDOW;
+        }
+        break;
+      }
+
+      case InterceptorState.COOLDOWN: {
+        jet.state = InterceptorState.INACTIVE;
+        break;
+      }
+    }
+  }
+
+  fireMissile() {
+    const jet = this.interceptor;
+    audio.playMissileLaunch();
+    this.addScreenShake(3, 0.1);
+
+    // Calculate initial velocity vector towards locked aim point
+    const startX = jet.x - 10;
+    const startY = jet.y + jet.h / 2;
+
+    const dx = jet.aimX - startX;
+    const dy = jet.aimY - startY;
+    const angle = Math.atan2(dy, dx);
+
+    const speed = CONFIG.INTERCEPTOR.MISSILE_SPEED;
+
+    this.missiles.push({
+      x: startX,
+      y: startY,
+      w: 32,
+      h: 12,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      type: jet.missileType,
+      targetY: jet.aimY,
+      angle: angle,
+      trackingTimer: 0.45,
+      active: true,
+      lifetime: 3.5,
+    });
+  }
+
+  updateMissiles(dt) {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      m.lifetime -= dt;
+
+      // Tracking steering (limited homing)
+      if (m.type === 'tracking' && m.trackingTimer > 0) {
+        m.trackingTimer -= dt;
+        const desiredDy = (this.player.y + this.player.h / 2) - m.y;
+        m.vy += Math.sign(desiredDy) * 450 * dt;
+        m.angle = Math.atan2(m.vy, m.vx);
+      }
+
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+
+      // Spawn Missile Flame Trail
+      if (Math.random() < 0.8) {
+        this.particles.push({
+          x: m.x + m.w,
+          y: m.y + m.h / 2,
+          vx: Math.random() * 80 + 40,
+          vy: (Math.random() - 0.5) * 30,
+          size: Math.random() * 4 + 2,
+          color: Math.random() > 0.4 ? CONFIG.COLORS.HAZARD_SPIKE : '#ffaa00',
+          alpha: 1,
+          life: 0.2,
+          maxLife: 0.2
+        });
+      }
+
+      // --- 1. Collision with Player ---
+      const pad = CONFIG.INTERCEPTOR.MISSILE_HITBOX_PADDING;
+      const mx = m.x + pad;
+      const my = m.y + pad;
+      const mw = m.w - pad * 2;
+      const mh = m.h - pad * 2;
+
+      const px = this.player.x + CONFIG.PLAYER.HITBOX_PADDING;
+      const py = this.player.y + CONFIG.PLAYER.HITBOX_PADDING;
+      const pw = this.player.w - CONFIG.PLAYER.HITBOX_PADDING * 2;
+      const ph = this.player.h - CONFIG.PLAYER.HITBOX_PADDING * 2;
+
+      if (px < mx + mw && px + pw > mx && py < my + mh && py + ph > my) {
+        this.lastKillerType = 'interceptor-missile';
+        this.lastMissileVariant = m.type;
+        this.explodeMissile(m);
+        this.missiles.splice(i, 1);
+        this.setState(GameState.DEAD);
+        return;
+      }
+
+      // --- 2. Missile vs World (Emergent Obstacle Demolition) ---
+      let hitObstacle = false;
+      for (let j = this.obstacles.length - 1; j >= 0; j--) {
+        const obs = this.obstacles[j];
+        if (
+          mx < obs.x + obs.w &&
+          mx + mw > obs.x &&
+          my < obs.y + obs.h &&
+          my + mh > obs.y
+        ) {
+          // Obstacle Destroyed!
+          this.explodeObstacle(obs);
+          this.obstacles.splice(j, 1);
+          hitObstacle = true;
+
+          // Demolition Bonus
+          this.score += 150;
+          this.floatingTexts.push({
+            text: '+150 DEMOLITION',
+            x: obs.x,
+            y: obs.y - 15,
+            alpha: 1,
+            color: CONFIG.COLORS.ACCENT_CYAN,
+            life: 0.9,
+            maxLife: 0.9
+          });
+          break;
+        }
+      }
+
+      if (hitObstacle) {
+        this.explodeMissile(m);
+        this.missiles.splice(i, 1);
+        continue;
+      }
+
+      // Ground Impact or Off-Screen Expiry
+      if (m.y + m.h >= this.groundY || m.x < -60 || m.lifetime <= 0) {
+        this.explodeMissile(m);
+        this.missiles.splice(i, 1);
+      }
+    }
+
+    // Update Floating Demolition Texts
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i];
+      ft.y -= dt * 35;
+      ft.life -= dt;
+      ft.alpha = Math.max(0, ft.life / ft.maxLife);
+      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+    }
+  }
+
+  explodeMissile(m) {
+    audio.playMissileExplosion();
+    this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_MISSILE, CONFIG.VISUALS.SHAKE_DURATION_MISSILE);
+
+    for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_EXPLOSION; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 240 + 60;
+      this.particles.push({
+        x: m.x,
+        y: m.y + m.h / 2,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        size: Math.random() * 6 + 3,
+        color: Math.random() > 0.4 ? CONFIG.COLORS.HAZARD_SPIKE : '#ffcc00',
+        alpha: 1,
+        life: 0.45,
+        maxLife: 0.45
+      });
+    }
+  }
+
+  explodeObstacle(obs) {
+    for (let i = 0; i < 16; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 200 + 50;
+      this.particles.push({
+        x: obs.x + obs.w / 2,
+        y: obs.y + obs.h / 2,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 50,
+        size: Math.random() * 5 + 3,
+        color: obs.type === 'spike' ? CONFIG.COLORS.HAZARD_SPIKE : CONFIG.COLORS.HAZARD_BLOCK,
+        alpha: 1,
+        life: 0.5,
+        maxLife: 0.5
+      });
+    }
+  }
+
+  /**
+   * Constraint-Aware Procedural Generation (Modulates during special events)
    */
   updateProceduralGeneration() {
+    // If Interceptor event is active or during recovery window, spawn sparse single hazards to avoid unfair clutter
+    const isSpecialEvent = this.eventDirector.isEventActive || this.eventDirector.recoveryTimer > 0;
+
     while (this.nextSpawnX < this.virtualWidth + 300) {
-      const pattern = this.selectWeightedPattern();
+      let pattern;
+      if (isSpecialEvent) {
+        // Spawn gentle breather single spike with wide gap
+        pattern = this.getPatternData('single');
+      } else {
+        pattern = this.selectWeightedPattern();
+      }
+
       this.spawnPattern(pattern, this.nextSpawnX);
 
       const minSafeGap = (this.currentSpeed * this.jumpAirTime) * 0.70 +
                          CONFIG.PLAYER.WIDTH +
                          CONFIG.OBSTACLES.SAFETY_BUFFER;
 
-      const spacingVariance = Math.max(90, 260 - (this.score / 18));
+      const baseVariance = isSpecialEvent ? 320 : 240;
+      const spacingVariance = Math.max(90, baseVariance - (this.score / 18));
       const nextGap = minSafeGap + Math.random() * spacingVariance;
 
       this.nextSpawnX += pattern.totalWidth + nextGap;
@@ -676,9 +1054,6 @@ class GameEngine {
     }
   }
 
-  /**
-   * AABB Collision Detection with Inward Insets
-   */
   checkCollisions() {
     const pad = CONFIG.PLAYER.HITBOX_PADDING;
     const px = this.player.x + pad;
@@ -722,7 +1097,6 @@ class GameEngine {
 
     // --- INTRO CINEMATIC UPDATE ---
     if (this.state === GameState.INTRO_IDLE) {
-      // Slowly drift stars in dark space
       for (const s of this.warpStars) {
         s.z -= 15 * dt;
         if (s.z <= 1) s.z = s.origZ;
@@ -733,26 +1107,21 @@ class GameEngine {
 
     if (this.state === GameState.INTRO_WARP) {
       this.introTimer += dt;
-
-      // Accelerate 3D Starfield Backwards (Warp Speed)
       const warpSpeed = 1200 * (this.introTimer / 1.4);
       for (const s of this.warpStars) {
         s.z -= warpSpeed * dt;
         if (s.z <= 1) s.z = s.origZ;
       }
 
-      // 3D Rotating Cube zooms in from deep screen
       this.introCube.rotX += 2.8 * dt;
       this.introCube.rotY += 3.5 * dt;
       this.introCube.rotZ += 1.8 * dt;
 
-      // Zoom scale from 0.05 -> 1.5 -> 1.0
       if (this.introTimer < 1.2) {
         const progress = this.introTimer / 1.2;
         this.introCube.scale = 0.05 + Math.sin(progress * Math.PI * 0.5) * 1.35;
         this.introCube.opacity = Math.min(1, progress * 1.5);
       } else {
-        // Transition to Cube Slide & Slam phase
         this.setState(GameState.INTRO_SLAM);
         this.introTimer = 0;
       }
@@ -763,19 +1132,14 @@ class GameEngine {
 
     if (this.state === GameState.INTRO_SLAM) {
       this.introTimer += dt;
-
-      // Cube slides from left across screen and slams onto ground
       const slamDuration = 0.8;
       const progress = Math.min(1, this.introTimer / slamDuration);
 
-      // Slide X: -60 -> CONFIG.PLAYER.START_X (120)
       this.player.x = -60 + progress * (CONFIG.PLAYER.START_X + 60);
 
-      // Parabolic drop onto ground
       const dropProgress = Math.min(1, progress * 1.4);
       this.player.y = 100 + Math.pow(dropProgress, 2) * (this.groundY - CONFIG.PLAYER.HEIGHT - 100);
 
-      // Spawn glowing trail particles
       if (Math.random() < 0.8) {
         this.particles.push({
           x: this.player.x + Math.random() * this.player.w,
@@ -790,7 +1154,6 @@ class GameEngine {
         });
       }
 
-      // Slam impact event at t = 0.75s
       if (this.introTimer >= 0.75 && !this.introSlamTriggered) {
         this.introSlamTriggered = true;
         this.player.y = this.groundY - CONFIG.PLAYER.HEIGHT;
@@ -798,7 +1161,6 @@ class GameEngine {
         audio.playSlam();
         this.addScreenShake(16, 0.45);
 
-        // Heavy ground dust shockwave
         for (let i = 0; i < 28; i++) {
           const angle = Math.random() * Math.PI;
           const speed = Math.random() * 260 + 60;
@@ -940,6 +1302,7 @@ class GameEngine {
     this.nextSpawnX -= moveStep;
 
     this.updateProceduralGeneration();
+    this.updateEventDirector(dt); // Space Interceptor Encounter Director
     this.groundOffset = (this.groundOffset + moveStep) % 40;
     this.checkCollisions();
     this.updateParticles(dt);
@@ -970,7 +1333,6 @@ class GameEngine {
   render() {
     this.ctx.save();
 
-    // Apply Screen Shake
     if (this.shakeTime > 0) {
       const shakeProgress = this.shakeTime / this.shakeDuration;
       const curIntensity = this.shakeIntensity * shakeProgress;
@@ -979,7 +1341,7 @@ class GameEngine {
       this.ctx.translate(offsetX, offsetY);
     }
 
-    // 1. Clear & Dark Space Backdrop
+    // 1. Dark Space Backdrop
     this.ctx.fillStyle = CONFIG.COLORS.BG_DARK;
     this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
 
@@ -1002,6 +1364,9 @@ class GameEngine {
     // 5. Obstacles
     if (this.state === GameState.PLAYING || this.state === GameState.DEAD || this.state === GameState.PAUSED) {
       this.renderObstacles();
+      this.renderInterceptor();
+      this.renderMissiles();
+      this.renderFloatingTexts();
     }
 
     // 6. Particles
@@ -1030,7 +1395,6 @@ class GameEngine {
         const alpha = Math.min(1, Math.max(0.1, (1000 - s.z) / 1000));
 
         if (this.state === GameState.INTRO_WARP) {
-          // Draw Warp Speed Streaks
           const prevK = fov / Math.max(1, s.z + 45);
           const ppx = cx + s.x * prevK;
           const ppy = cy + s.y * prevK;
@@ -1042,7 +1406,6 @@ class GameEngine {
           this.ctx.lineTo(px, py);
           this.ctx.stroke();
         } else {
-          // Gentle Twinkling Stars
           this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha * s.alpha})`;
           this.ctx.beginPath();
           this.ctx.arc(px, py, starSize / 2, 0, Math.PI * 2);
@@ -1064,7 +1427,6 @@ class GameEngine {
 
     const s = c.size;
 
-    // Define 8 vertices of a 3D unit cube centered at origin
     const vertices = [
       [-s, -s, -s],
       [ s, -s, -s],
@@ -1076,25 +1438,20 @@ class GameEngine {
       [-s,  s,  s]
     ];
 
-    // Rotate vertices in 3D
     const cosX = Math.cos(c.rotX), sinX = Math.sin(c.rotX);
     const cosY = Math.cos(c.rotY), sinY = Math.sin(c.rotY);
     const cosZ = Math.cos(c.rotZ), sinZ = Math.sin(c.rotZ);
 
     const proj = vertices.map(([x, y, z]) => {
-      // Rotate Y
       let x1 = x * cosY + z * sinY;
       let z1 = -x * sinY + z * cosY;
-      // Rotate X
       let y2 = y * cosX - z1 * sinX;
       let z2 = y * sinX + z1 * cosX;
-      // Rotate Z
       let x3 = x1 * cosZ - y2 * sinZ;
       let y3 = x1 * sinZ + y2 * cosZ;
       return [x3, y3, z2];
     });
 
-    // 6 Faces of the Cube
     const faces = [
       [0, 1, 2, 3, CONFIG.COLORS.PLAYER],
       [5, 4, 7, 6, '#ff8000'],
@@ -1104,7 +1461,6 @@ class GameEngine {
       [3, 2, 6, 7, '#994400'],
     ];
 
-    // Sort faces by depth for painter's algorithm
     faces.map(f => {
       const avgZ = (proj[f[0]][2] + proj[f[1]][2] + proj[f[2]][2] + proj[f[3]][2]) / 4;
       return { face: f, z: avgZ };
@@ -1219,8 +1575,138 @@ class GameEngine {
     }
   }
 
+  /**
+   * Space Interceptor Hunter Drone Renderer
+   */
+  renderInterceptor() {
+    const jet = this.interceptor;
+    if (jet.state === InterceptorState.INACTIVE) return;
+
+    this.ctx.save();
+    this.ctx.translate(jet.x, jet.y);
+
+    // 1. Sleek Angular Fuselage
+    this.ctx.fillStyle = CONFIG.COLORS.INTERCEPTOR_HULL;
+    this.ctx.beginPath();
+    this.ctx.moveTo(jet.w, jet.h / 2);              // Nose
+    this.ctx.lineTo(jet.w * 0.4, 0);                 // Top Wingtip
+    this.ctx.lineTo(0, jet.h * 0.2);                 // Top Engine
+    this.ctx.lineTo(0, jet.h * 0.8);                 // Bottom Engine
+    this.ctx.lineTo(jet.w * 0.4, jet.h);             // Bottom Wingtip
+    this.ctx.closePath();
+    this.ctx.fill();
+
+    this.ctx.strokeStyle = jet.isLocked ? CONFIG.COLORS.HAZARD_SPIKE : CONFIG.COLORS.ACCENT_CYAN;
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // 2. Glowing Visor / Cockpit Sensor Eye
+    this.ctx.fillStyle = jet.isLocked ? '#ff0033' : CONFIG.COLORS.INTERCEPTOR_ACCENT;
+    this.ctx.fillRect(jet.w * 0.5, jet.h / 2 - 3, 14, 6);
+
+    // 3. Engine Thruster Plume
+    const thrusterLength = 16 + Math.sin(jet.thrusterPulse) * 8;
+    this.ctx.fillStyle = CONFIG.COLORS.INTERCEPTOR_THRUST;
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, jet.h * 0.3);
+    this.ctx.lineTo(-thrusterLength, jet.h / 2);
+    this.ctx.lineTo(0, jet.h * 0.7);
+    this.ctx.closePath();
+    this.ctx.fill();
+
+    this.ctx.restore();
+
+    // --- 4. Laser Targeting Line & Reticle Overlay ---
+    if (jet.state === InterceptorState.TARGETING || jet.state === InterceptorState.LOCKED) {
+      this.ctx.save();
+
+      // Pulsing laser guide
+      const laserAlpha = jet.isLocked ? 0.9 : 0.4 + Math.sin(jet.timer * 16) * 0.25;
+      this.ctx.strokeStyle = jet.isLocked ? 'rgba(255, 42, 85, 0.9)' : `rgba(255, 42, 85, ${laserAlpha})`;
+      this.ctx.lineWidth = jet.isLocked ? 2.5 : 1.5;
+      this.ctx.setLineDash(jet.isLocked ? [] : [6, 4]);
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(jet.x - 4, jet.y + jet.h / 2);
+      this.ctx.lineTo(jet.aimX, jet.aimY);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      // Target Reticle (Crosshair)
+      this.ctx.translate(jet.aimX, jet.aimY);
+      const reticleRadius = jet.isLocked ? 14 : 18 + Math.sin(jet.timer * 14) * 4;
+
+      this.ctx.strokeStyle = jet.isLocked ? '#ff0033' : CONFIG.COLORS.TARGET_RETICLE;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, reticleRadius, 0, Math.PI * 2);
+      this.ctx.stroke();
+
+      // Crosshair notches
+      this.ctx.beginPath();
+      this.ctx.moveTo(-reticleRadius - 4, 0);
+      this.ctx.lineTo(-reticleRadius + 4, 0);
+      this.ctx.moveTo(reticleRadius - 4, 0);
+      this.ctx.lineTo(reticleRadius + 4, 0);
+      this.ctx.moveTo(0, -reticleRadius - 4);
+      this.ctx.lineTo(0, -reticleRadius + 4);
+      this.ctx.moveTo(0, reticleRadius - 4);
+      this.ctx.lineTo(0, reticleRadius + 4);
+      this.ctx.stroke();
+
+      // "LOCK" Warning Text
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.font = 'bold 10px JetBrains Mono';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(jet.isLocked ? 'TARGET LOCKED' : 'LOCKING...', 0, -reticleRadius - 8);
+
+      this.ctx.restore();
+    }
+  }
+
+  renderMissiles() {
+    for (const m of this.missiles) {
+      this.ctx.save();
+      this.ctx.translate(m.x + m.w / 2, m.y + m.h / 2);
+      this.ctx.rotate(m.angle);
+
+      // Missile Body
+      this.ctx.fillStyle = CONFIG.COLORS.HAZARD_SPIKE;
+      this.ctx.fillRect(-m.w / 2, -m.h / 2, m.w - 6, m.h);
+
+      // Pointed Warhead
+      this.ctx.fillStyle = '#ffaa00';
+      this.ctx.beginPath();
+      this.ctx.moveTo(m.w / 2 - 6, -m.h / 2);
+      this.ctx.lineTo(m.w / 2, 0);
+      this.ctx.lineTo(m.w / 2 - 6, m.h / 2);
+      this.ctx.closePath();
+      this.ctx.fill();
+
+      // Fins
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillRect(-m.w / 2, -m.h / 2 - 4, 6, 4);
+      this.ctx.fillRect(-m.w / 2, m.h / 2, 6, 4);
+
+      this.ctx.restore();
+    }
+  }
+
+  renderFloatingTexts() {
+    for (const ft of this.floatingTexts) {
+      this.ctx.save();
+      this.ctx.globalAlpha = ft.alpha;
+      this.ctx.fillStyle = ft.color;
+      this.ctx.font = 'bold 13px JetBrains Mono';
+      this.ctx.textAlign = 'center';
+      this.ctx.shadowColor = ft.color;
+      this.ctx.shadowBlur = 10;
+      this.ctx.fillText(ft.text, ft.x, ft.y);
+      this.ctx.restore();
+    }
+  }
+
   renderPlayer() {
-    // Motion Trail
     for (let i = 0; i < this.player.trail.length; i++) {
       const t = this.player.trail[i];
       const alpha = (1 - (i / this.player.trail.length)) * 0.35;
@@ -1234,7 +1720,6 @@ class GameEngine {
       this.ctx.restore();
     }
 
-    // Main Cube
     this.ctx.save();
     this.ctx.translate(this.player.x + this.player.w / 2, this.player.y + this.player.h / 2);
     this.ctx.rotate(this.player.rotation);
@@ -1246,7 +1731,6 @@ class GameEngine {
     this.ctx.lineWidth = 2;
     this.ctx.strokeRect(-this.player.w / 2 + 1, -this.player.h / 2 + 1, this.player.w - 2, this.player.h - 2);
 
-    // Visor Eye
     this.ctx.fillStyle = CONFIG.COLORS.PLAYER_EYE;
     if (this.player.isSquashing) {
       this.ctx.fillRect(2, -3, 12, 4);
@@ -1275,9 +1759,6 @@ class GameEngine {
     }
   }
 
-  /**
-   * Main Delta-Time Loop
-   */
   loop(currentTime) {
     if (!this.lastTime) this.lastTime = currentTime;
 
@@ -1291,12 +1772,8 @@ class GameEngine {
     requestAnimationFrame((time) => this.loop(time));
   }
 
-  /**
-   * Action Input Bindings
-   */
   bindActionInputs() {
     window.addEventListener('keydown', (e) => {
-      // Handle Intro Enter
       if (this.state === GameState.INTRO_IDLE) {
         if (e.code === 'Space' || e.code === 'Enter') {
           e.preventDefault();
@@ -1305,35 +1782,30 @@ class GameEngine {
         return;
       }
 
-      // JUMP: Space, ArrowUp, W
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         e.preventDefault();
         this.inputs.jump = true;
         this.triggerJump();
       }
 
-      // SQUASH: ArrowDown, S
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
         e.preventDefault();
         this.inputs.squash = true;
         this.startSquash();
       }
 
-      // DASH: Shift, X
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyX') {
         e.preventDefault();
         this.inputs.dash = true;
         this.triggerDash();
       }
 
-      // RETRY: R
       if (e.code === 'KeyR') {
         e.preventDefault();
         audio.playClick();
         this.startNewRun();
       }
 
-      // PAUSE: P, Escape
       if (e.code === 'KeyP' || e.code === 'Escape') {
         e.preventDefault();
         audio.playClick();
@@ -1344,12 +1816,10 @@ class GameEngine {
         }
       }
 
-      // MUTE: M
       if (e.code === 'KeyM') {
         this.toggleSound();
       }
 
-      // FULLSCREEN: F
       if (e.code === 'KeyF') {
         this.toggleFullscreen();
       }
@@ -1362,7 +1832,6 @@ class GameEngine {
       }
     });
 
-    // Mobile / Touch Multi-Zone Bindings
     const touchJump = document.getElementById('touch-jump-zone');
     const touchSquash = document.getElementById('touch-squash-zone');
     const touchDash = document.getElementById('touch-dash-zone');
@@ -1396,7 +1865,6 @@ class GameEngine {
       });
     }
 
-    // Canvas / Intro Click Handler
     const canvasWrap = document.getElementById('game-wrapper');
     canvasWrap.addEventListener('pointerdown', (e) => {
       if (this.state === GameState.INTRO_IDLE) {
@@ -1417,12 +1885,10 @@ class GameEngine {
   }
 
   bindUIButtons() {
-    // Intro Click
     document.getElementById('intro-overlay').addEventListener('click', () => {
       this.startCinematicEntrance();
     });
 
-    // Menu Buttons (4 Options)
     document.getElementById('btn-play').addEventListener('click', () => {
       audio.playClick();
       this.startNewRun();
@@ -1442,7 +1908,6 @@ class GameEngine {
       this.dom.settingsOverlay.classList.remove('hidden');
     });
 
-    // Guide Modal
     document.getElementById('btn-close-guide').addEventListener('click', () => {
       audio.playClick();
       this.dom.guideOverlay.classList.add('hidden');
@@ -1453,7 +1918,6 @@ class GameEngine {
       this.startNewRun();
     });
 
-    // Settings Modal
     document.getElementById('btn-close-settings').addEventListener('click', () => {
       audio.playClick();
       this.dom.settingsOverlay.classList.add('hidden');
@@ -1463,7 +1927,6 @@ class GameEngine {
       this.dom.settingsOverlay.classList.add('hidden');
     });
 
-    // Settings Sliders
     this.dom.sliderMasterVol.addEventListener('input', (e) => {
       audio.setMasterVolume(parseFloat(e.target.value));
     });
@@ -1474,7 +1937,6 @@ class GameEngine {
       audio.setSFXVolume(parseFloat(e.target.value));
     });
 
-    // Color Skin Picker
     document.querySelectorAll('.color-dot').forEach(dot => {
       dot.addEventListener('click', () => {
         audio.playClick();
@@ -1487,7 +1949,6 @@ class GameEngine {
       });
     });
 
-    // Pause Buttons
     document.getElementById('btn-resume').addEventListener('click', () => {
       audio.playClick();
       this.setState(GameState.PLAYING);
@@ -1501,7 +1962,6 @@ class GameEngine {
       this.setState(GameState.MENU);
     });
 
-    // Death Buttons
     document.getElementById('btn-retry').addEventListener('click', () => {
       audio.playClick();
       this.startNewRun();
@@ -1514,7 +1974,6 @@ class GameEngine {
       this.setState(GameState.MENU);
     });
 
-    // Leaderboard Modal
     document.getElementById('btn-close-leaderboard').addEventListener('click', () => {
       audio.playClick();
       this.dom.leaderboardOverlay.classList.add('hidden');
@@ -1527,7 +1986,6 @@ class GameEngine {
       await this.refreshLeaderboardView();
     });
 
-    // Top Controls
     document.getElementById('btn-toggle-sound').addEventListener('click', () => this.toggleSound());
     document.getElementById('btn-toggle-crt').addEventListener('click', () => {
       audio.playClick();
