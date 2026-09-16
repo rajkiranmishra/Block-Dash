@@ -118,11 +118,17 @@ export const CONFIG = {
     ACCENT_AMBER: '#ff9f1c',
     ACCENT_CYAN: '#00f5d4',
     ACCENT_PINK: '#ff007f',
+    HOLO_GRID: 'rgba(0, 245, 212, 0.25)',
+    HOLO_PROMPT: '#00f5d4',
   },
 
-  // --- Supabase Default Config (Browser Safe) ---
-  SUPABASE: {
-    URL: '',
-    ANON_KEY: '',
+  // --- Interactive 3D Training Simulation Parameters ---
+  TUTORIAL: {
+    TRAINING_SPEED: 300,            // Comfortable instructional scrolling speed
+    REWIND_DURATION: 0.4,          // Duration of holographic rewind glitch on mistake
+    SUCCESS_PAUSE: 0.7,            // Brief pause to celebrate clearing a step
+    GRID_PERSPECTIVE_DEPTH: 280,   // 3D perspective projection depth for training floor
+    PROMPT_FADE_SPEED: 6,          // Fade transition speed for instructions
   },
 };
+

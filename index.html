@@ -13,9 +13,6 @@
   
   <!-- Arcade Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
-  
-  <!-- Supabase JS Client for Leaderboard & Auth -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -89,6 +86,19 @@
         </div>
       </div>
 
+      <!-- Interactive 3D Tutorial HUD -->
+      <div id="tutorial-hud" class="tutorial-hud hidden" aria-live="polite">
+        <div class="tutorial-header">
+          <div class="holo-badge">◆ NEURAL TRAINING SIMULATION ◆</div>
+          <button id="btn-skip-tutorial" class="skip-btn" title="Skip Training (ESC)">SKIP TRAINING ✕</button>
+        </div>
+        <div class="tutorial-card">
+          <div id="tutorial-step-tag" class="tutorial-step">CALIBRATION // STEP 1 OF 3</div>
+          <div id="tutorial-directive" class="tutorial-directive">TAP SPACE / CLICK TO JUMP</div>
+          <div id="tutorial-tip" class="tutorial-tip">Time your leap to clear the holographic spike cleanly.</div>
+        </div>
+      </div>
+
       <!-- 1. INTRO / CINEMATIC ENTRY SCREEN -->
       <section id="intro-overlay" class="ui-overlay">
         <h1 class="intro-title">BLOCK <span>DASH</span></h1>
@@ -108,7 +118,7 @@
             </svg>
             PLAY NOW
           </button>
-          <button id="btn-open-leaderboard" class="arcade-btn">
+          <button id="btn-open-records" class="arcade-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
               <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
@@ -117,15 +127,14 @@
               <path d="M18 14.66V17c0 .55-.45 1-1 1h-2c-.55 0-1-.45-1-1v-2.34"></path>
               <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
             </svg>
-            LEADERBOARD
+            RECORDS & STATS
           </button>
-          <button id="btn-open-guide" class="arcade-btn">
+          <button id="btn-open-tutorial" class="arcade-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
-              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              <polygon points="10 8 16 12 10 16 10 8"></polygon>
             </svg>
-            HOW TO PLAY
+            TRAINING SIM
           </button>
           <button id="btn-open-settings" class="arcade-btn full-width">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -143,54 +152,7 @@
         </div>
       </section>
 
-      <!-- 3. HOW TO PLAY MODAL -->
-      <section id="guide-overlay" class="ui-overlay hidden">
-        <div class="arcade-modal">
-          <div class="modal-header">
-            <div class="modal-title">HOW TO SURVIVE</div>
-            <button id="btn-close-guide" class="icon-btn" aria-label="Close Guide">✕</button>
-          </div>
-
-          <div class="guide-grid">
-            <div class="guide-item">
-              <div class="guide-keys">
-                <span class="kbd">SPACE</span>
-                <span class="kbd">W / ↑</span>
-              </div>
-              <div class="guide-desc">
-                <h4>1. JUMP</h4>
-                <p>Leap over spikes, solid barrier blocks, and stepped obstacles.</p>
-              </div>
-            </div>
-
-            <div class="guide-item squash">
-              <div class="guide-keys">
-                <span class="kbd">S</span>
-                <span class="kbd">↓</span>
-              </div>
-              <div class="guide-desc">
-                <h4>2. SQUASH / SLIDE</h4>
-                <p>Hold to flatten your cube to 50% height and slide under floating lasers & crosses.</p>
-              </div>
-            </div>
-
-            <div class="guide-item dash">
-              <div class="guide-keys">
-                <span class="kbd">SHIFT</span>
-                <span class="kbd">X</span>
-              </div>
-              <div class="guide-desc">
-                <h4>3. DASH BURST</h4>
-                <p>Activate a 1.85x sonic speed burst across wide hazard gaps & energy gates. (1.2s Cooldown)</p>
-              </div>
-            </div>
-          </div>
-
-          <button id="btn-guide-start" class="arcade-btn primary" style="width: 100%;">LET'S DASH</button>
-        </div>
-      </section>
-
-      <!-- 4. SETTINGS MODAL -->
+      <!-- 3. SETTINGS MODAL -->
       <section id="settings-overlay" class="ui-overlay hidden">
         <div class="arcade-modal">
           <div class="modal-header">
@@ -240,13 +202,22 @@
                 <div class="color-dot" data-color="#06d6a0" style="background: #06d6a0;" title="Toxic Emerald"></div>
               </div>
             </div>
+
+            <!-- Tutorial Reset Button -->
+            <div class="setting-row" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+              <div>
+                <div class="setting-label">First-Time Tutorial</div>
+                <div class="setting-sub">Reset to re-experience first launch</div>
+              </div>
+              <button id="btn-reset-tutorial" class="arcade-btn" style="padding: 6px 12px; font-size: 11px;">RESET TRAINING</button>
+            </div>
           </div>
 
           <button id="btn-save-settings" class="arcade-btn primary" style="width: 100%;">APPLY SETTINGS</button>
         </div>
       </section>
 
-      <!-- 5. PAUSE OVERLAY -->
+      <!-- 4. PAUSE OVERLAY -->
       <section id="pause-overlay" class="ui-overlay hidden">
         <h2 style="font-size: 36px; font-weight: 900; letter-spacing: 2px; color: var(--accent-amber);">PAUSED</h2>
         <div class="btn-row">
@@ -257,9 +228,14 @@
         <div class="input-hint-grid" style="margin-top: 14px;"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
       </section>
 
-      <!-- 6. DEATH & ROAST OVERLAY -->
+      <!-- 5. DEATH & ROAST OVERLAY -->
       <section id="death-overlay" class="ui-overlay hidden">
         <div class="death-banner">YOU DIED</div>
+
+        <!-- Celebratory New Personal Best Banner -->
+        <div id="new-pb-banner" class="new-pb-badge hidden">
+          ★ NEW PERSONAL BEST! ★
+        </div>
         
         <!-- Context-Aware Roast Box -->
         <div class="roast-card">
@@ -273,7 +249,7 @@
         <!-- Run Stats Grid -->
         <div class="stats-grid">
           <div class="stat-box">
-            <div class="stat-box-label">SCORE</div>
+            <div class="stat-box-label">CURRENT SCORE</div>
             <div id="death-score" class="stat-box-val">0</div>
           </div>
           <div class="stat-box">
@@ -281,8 +257,8 @@
             <div id="death-pb" class="stat-box-val" style="color: var(--accent-amber);">0</div>
           </div>
           <div class="stat-box">
-            <div class="stat-box-label">GLOBAL RANK</div>
-            <div id="death-rank" class="stat-box-val" style="color: var(--accent-cyan); font-size: 18px; margin-top: 5px;">#---</div>
+            <div class="stat-box-label">ATTEMPTS</div>
+            <div id="death-attempts" class="stat-box-val" style="color: var(--accent-cyan); font-size: 20px;">0</div>
           </div>
         </div>
 
@@ -295,7 +271,7 @@
             </svg>
             RETRY NOW
           </button>
-          <button id="btn-death-leaderboard" class="arcade-btn">RANKINGS</button>
+          <button id="btn-death-records" class="arcade-btn">RECORDS</button>
           <button id="btn-death-menu" class="arcade-btn">MENU</button>
         </div>
 
@@ -304,27 +280,47 @@
         </div>
       </section>
 
-      <!-- 7. GLOBAL LEADERBOARD OVERLAY -->
-      <section id="leaderboard-overlay" class="ui-overlay hidden">
+      <!-- 6. LOCAL PLAYER RECORDS & STATS MODAL -->
+      <section id="records-overlay" class="ui-overlay hidden">
         <div class="arcade-modal">
           <div class="modal-header">
-            <div class="modal-title">GLOBAL LEADERBOARD</div>
-            <button id="btn-close-leaderboard" class="icon-btn" aria-label="Close Leaderboard">✕</button>
+            <div class="modal-title">PILOT RECORDS & STATISTICS</div>
+            <button id="btn-close-records" class="icon-btn" aria-label="Close Records">✕</button>
           </div>
 
-          <!-- Top Players List -->
-          <div id="leaderboard-rows" class="leaderboard-list">
-            <div class="leaderboard-row" style="justify-content: center; color: var(--text-muted);">
-              Loading global rankings...
+          <!-- Stats Cards Grid -->
+          <div class="records-grid">
+            <div class="record-card highlight">
+              <div class="record-label">PERSONAL BEST</div>
+              <div id="rec-pb" class="record-val amber">0</div>
+              <div class="record-sub">Highest distance achieved</div>
+            </div>
+            <div class="record-card">
+              <div class="record-label">TOTAL RUNS</div>
+              <div id="rec-attempts" class="record-val cyan">0</div>
+              <div class="record-sub">Endless attempts launched</div>
+            </div>
+            <div class="record-card">
+              <div class="record-label">LONGEST SURVIVAL</div>
+              <div id="rec-survival" class="record-val">0.0s</div>
+              <div class="record-sub">Max active flight time</div>
+            </div>
+            <div class="record-card">
+              <div class="record-label">MISSILE DEMOLITIONS</div>
+              <div id="rec-demolitions" class="record-val pink">0</div>
+              <div class="record-sub">Obstacles blasted by drones</div>
             </div>
           </div>
 
-          <!-- Player Name Customization -->
+          <!-- Callsign Customization -->
           <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; text-align: left;">
-            <label class="hud-label" for="player-name-input">YOUR CALLSIGN / NAME</label>
+            <label class="hud-label" for="player-name-input">PILOT CALLSIGN</label>
             <div class="name-input-group">
-              <input type="text" id="player-name-input" class="name-input" maxlength="16" placeholder="Enter CallSign..." spellcheck="false" autocomplete="off">
+              <input type="text" id="player-name-input" class="name-input" maxlength="16" placeholder="Enter Callsign..." spellcheck="false" autocomplete="off">
               <button id="btn-save-name" class="arcade-btn" style="padding: 8px 16px; font-size: 13px;">SAVE</button>
+            </div>
+            <div class="storage-notice">
+              🔒 All records and achievements are saved locally to this device / browser.
             </div>
           </div>
         </div>
@@ -335,9 +331,11 @@
 
   <!-- Modular Scripts -->
   <script type="module" src="js/config.js"></script>
+  <script type="module" src="js/storage.js"></script>
   <script type="module" src="js/audio.js"></script>
   <script type="module" src="js/roast.js"></script>
   <script type="module" src="js/leaderboard.js"></script>
   <script type="module" src="js/game.js"></script>
 </body>
 </html>
+

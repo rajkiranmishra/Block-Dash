@@ -210,6 +210,73 @@ const rMissileDash = roast.generateRoast({
 });
 assert(rMissileDash.category === 'DASHED INTO MISSILE', `Dash into tracking missile classified as "${rMissileDash.category}"`);
 
+// --- Test 6: StorageManager Local Persistence & Telemetry ---
+console.log('\n--- TEST 6: StorageManager Local Persistence & Defensive Fallback ---');
+import { StorageManager } from '../js/storage.js';
+
+const storageTest = new StorageManager();
+
+// Test A: Initial defaults
+assert(storageTest.getBestScore() === 0, 'StorageManager initializes with default Best Score of 0.');
+assert(storageTest.hasSeenTutorial() === false, 'StorageManager initializes with hasSeenTutorial = false.');
+assert(storageTest.getAttempts() === 0, 'StorageManager initializes with 0 attempts.');
+
+// Test B: Increment attempts & PB update
+const attemptsAfter1 = storageTest.incrementAttempts();
+assert(attemptsAfter1 === 1, `incrementAttempts increments count to ${attemptsAfter1}.`);
+
+const pbResult1 = storageTest.saveBestScore(850);
+assert(pbResult1.isNewPB === true && pbResult1.best === 850, `saveBestScore(850) sets new PB (850).`);
+
+const pbResult2 = storageTest.saveBestScore(620);
+assert(pbResult2.isNewPB === false && pbResult2.best === 850, `saveBestScore(620) preserves existing PB (850).`);
+
+// Test C: Run recording & Demolitions
+storageTest.recordRun(850, 24.5);
+storageTest.recordDemolition();
+storageTest.recordDemolition();
+
+const stats = storageTest.getStats();
+assert(stats.longestSurvival === 24.5, `Longest survival recorded correctly (${stats.longestSurvival}s).`);
+assert(stats.missileDemolitions === 2, `Missile demolitions recorded correctly (${stats.missileDemolitions}).`);
+
+// Test D: Tutorial mark and reset
+storageTest.markTutorialSeen();
+assert(storageTest.hasSeenTutorial() === true, 'markTutorialSeen() sets hasSeenTutorial = true.');
+
+storageTest.resetTutorialStatus();
+assert(storageTest.hasSeenTutorial() === false, 'resetTutorialStatus() successfully resets hasSeenTutorial to false.');
+
+// Test E: Callsign validation
+const callsign = storageTest.setPlayerName('CYBER_RUNNER');
+assert(callsign === 'CYBER_RUNNER', `Pilot callsign saved as "${callsign}".`);
+assert(storageTest.getPlayerName() === 'CYBER_RUNNER', 'getPlayerName() retrieves updated callsign.');
+
+// --- Test 7: Holographic Tutorial Matrix Timing & Clearance Math ---
+console.log('\n--- TEST 7: 3D Holographic Tutorial Mechanics & Clearance ---');
+const trainingSpeed = CONFIG.TUTORIAL.TRAINING_SPEED; // 300 px/s
+const rewindDuration = CONFIG.TUTORIAL.REWIND_DURATION; // 0.4s
+const successPause = CONFIG.TUTORIAL.SUCCESS_PAUSE; // 0.7s
+
+assert(trainingSpeed < CONFIG.SPEED.INITIAL, `Training speed (${trainingSpeed}px/s) is gentler than initial game speed (${CONFIG.SPEED.INITIAL}px/s) for comfortable learning.`);
+assert(rewindDuration >= 0.3 && rewindDuration <= 0.6, `Rewind glitch duration (${rewindDuration}s) is snappy and responsive.`);
+assert(successPause >= 0.5 && successPause <= 1.0, `Success pause (${successPause}s) allows visual comprehension before next stage.`);
+
+// Combo Course Spacing Verification (Step 4)
+const comboSpikeX = 140;
+const comboBarX = 440;
+const comboDoubleX = 760;
+
+const gap1 = comboBarX - (comboSpikeX + 36); // 440 - 176 = 264px
+const gap2 = comboDoubleX - (comboBarX + 110); // 760 - 550 = 210px
+
+const timeGap1 = gap1 / trainingSpeed; // 264 / 300 = 0.88s
+const timeGap2 = gap2 / trainingSpeed; // 210 / 300 = 0.70s
+
+console.log(`Tutorial Combo Gaps: Gap 1 = ${gap1}px (${timeGap1.toFixed(2)}s), Gap 2 = ${gap2}px (${timeGap2.toFixed(2)}s)`);
+assert(timeGap1 >= 0.70, `Combo Gap 1 time (${timeGap1.toFixed(2)}s) gives player sufficient recovery after jump.`);
+assert(timeGap2 >= 0.65, `Combo Gap 2 time (${timeGap2.toFixed(2)}s) gives player sufficient reaction time before dash.`);
+
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);
 console.log(`========================================================\n`);

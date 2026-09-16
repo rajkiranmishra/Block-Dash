@@ -19,9 +19,10 @@
 12. [AABB Collision Detection & Hitbox Padding](#12-aabb-collision-detection--hitbox-padding)
 13. [Decoupled Action Input Architecture](#13-decoupled-action-input-architecture)
 14. [Context-Aware Roast & Meme Criticism Engine](#14-context-aware-roast--meme-criticism-engine)
-15. [Supabase Identity, Leaderboards & Row Level Security (RLS)](#15-supabase-identity-leaderboards--row-level-security-rls)
-16. [Zero-Dependency Web Audio API Sound Synthesizer](#16-zero-dependency-web-audio-api-sound-synthesizer)
-17. [VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)](#17-viva-questions--technical-answers-professor-mode)
+15. [Interactive 3D Holographic Training Simulation ("Neural Matrix")](#15-interactive-3d-holographic-training-simulation-neural-matrix)
+16. [Defensive Local Storage & Personal Best Architecture](#16-defensive-local-storage--personal-best-architecture)
+17. [Zero-Dependency Web Audio API Sound Synthesizer](#17-zero-dependency-web-audio-api-sound-synthesizer)
+18. [VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)](#18-viva-questions--technical-answers-professor-mode)
 
 ---
 
@@ -354,15 +355,74 @@ Analyzes telemetry to categorize deaths:
 
 ---
 
-## 15. Supabase Identity, Leaderboards & Row Level Security (RLS)
+## 15. Interactive 3D Holographic Training Simulation ("Neural Matrix")
 
-- Anonymous authentication via `supabase.auth.signInAnonymously()`.
-- RLS policy: users can only write to rows where `auth.uid() = user_id`.
-- Anti-cheat sanity check: `score <= survivalTime * 120 + 200`.
+```
+   ┌────────────────────────────────────────────────────────┐
+   │             NEURAL TRAINING SIMULATION STAGES          │
+   └───────────────────────────┬────────────────────────────┘
+                               │
+                               ▼
+                        ┌──────────────┐
+                        │ STEP 0: BOOT │ (Calibration & Neural Link initialization)
+                        └──────┬───────┘
+                               │ Auto-advances after 1.4s
+                               ▼
+                        ┌──────────────┐
+                        │ STEP 1: JUMP │ (Holographic spike approach at 300px/s)
+                        └──────┬───────┘
+                               │ Clear spike cleanly (Rewinds on error)
+                               ▼
+                        ┌──────────────┐
+                        │STEP 2: SQUASH│ (Low-altitude overhead beam floating at y=410)
+                        └──────┬───────┘
+                               │ Slide underneath cleanly (Rewinds on uncrouch)
+                               ▼
+                        ┌──────────────┐
+                        │ STEP 3: DASH │ (Double hazard field requiring hyper-burst)
+                        └──────┬───────┘
+                               │ Clear hazard with dash (Rewinds on early dash)
+                               ▼
+                        ┌──────────────┐
+                        │STEP 4: COMBO │ (Sequential jump -> squash -> dash course)
+                        └──────┬───────┘
+                               │ All 3 hazards cleared sequentially
+                               ▼
+                        ┌──────────────┐
+                        │STEP 5: LAUNCH│ (Dematerializes grid & smoothly launches live run)
+                        └──────────────┘
+```
+
+### Architectural Highlights
+1. **Zero Text Walls**: Players learn by hands-on movement.
+2. **Rewind-on-Mistake Glitch**: If the player hits a training hazard, a cybernetic chromatic aberration glitch triggers, the obstacle smoothly rewinds back to starting position via easing interpolation, and the player is safely reset without dying or losing momentum.
+3. **3D Holographic Horizon Floor**: Rendered via 2D Canvas matrix perspective projections with cyan `#00f5d4` fanning perspective lines and moving transverse grid lines.
+4. **Seamless Dematerialization**: Upon clearing the combo course, the holographic grid dissolves into glowing neon cubes, and the player cube seamlessly transitions into the live endless run at full speed.
+5. **Auto-Routing**: Automatically guides first-time pilots on their initial click of `PLAY NOW`, can be skipped instantly with <kbd>ESC</kbd> or `SKIP TRAINING ✕`, and is replayable at any time from the Main Menu (`TRAINING SIM`).
 
 ---
 
-## 16. Zero-Dependency Web Audio API Sound Synthesizer
+## 16. Defensive Local Storage & Personal Best Architecture
+
+### Zero-Backend Philosophy
+BLOCK DASH is fully self-contained and does not require external cloud servers, Supabase, Firebase, or user registration.
+
+### Guaranteed Fault-Tolerant Resilience
+The `StorageManager` (`js/storage.js`) protects against all browser edge cases:
+- **Private / Incognito Browsing**: If `localStorage` throws `DOMException` or security errors, the engine seamlessly falls back to an in-memory `Map()`.
+- **Corrupted or Negative Data**: Uses strict numeric sanitizer `_parseNonNegativeInt(val, defaultVal)`.
+- **Storage Quota Exceeded**: Silently catches `QuotaExceededError` without interrupting gameplay.
+- **Data Model**:
+  - `blockdash_best_score`: Highest personal best score.
+  - `blockdash_attempts`: Total run attempts launched.
+  - `blockdash_tutorial_seen`: Boolean flag indicating completion or skip.
+  - `blockdash_player_name`: Local pilot callsign (up to 16 alphanumeric characters).
+  - `blockdash_stats`: Comprehensive lifetime telemetry (max survival time, missile demolitions, total score).
+  - `blockdash_settings`: Master, music, SFX volumes, neon accent color.
+
+---
+
+## 17. Zero-Dependency Web Audio API Sound Synthesizer
 
 Native Web Audio API oscillators synthesize:
 - `playJump()`: Upward square frequency sweep (180Hz $\to$ 480Hz).
@@ -374,11 +434,16 @@ Native Web Audio API oscillators synthesize:
 - `playTargetBeep(pitch)`: Progressive radar ping (440Hz $\to$ 880Hz).
 - `playJetFlyby()`: High-speed Doppler swept lowpass filtered drone whoosh.
 - `playMissileLaunch()`: High-pressure pneumatic ignition rocket pulse.
-- `playMissileDetonate()`: Explosive resonant sub-bass blast.
+- `playMissileExplosion()`: Explosive resonant sub-bass blast.
+- `playTutorialStep()`: High-tech progression chime ($587\text{Hz} \to 880\text{Hz}$).
+- `playTutorialSuccess()`: Ascending harmonic C-E-G triad ($523\text{Hz} \to 659\text{Hz} \to 784\text{Hz}$).
+- `playTutorialGlitch()`: Soft sawtooth pitch-bend glitch on training mistake.
+- `playTutorialComplete()`: Resonant E major 7th chord + sub-bass pulse.
+- `playNewPersonalBest()`: Triumphant victory arpeggio ($440\text{Hz} \to 1108\text{Hz}$).
 
 ---
 
-## 17. VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)
+## 18. VIVA QUESTIONS & TECHNICAL ANSWERS (Professor Mode)
 
 ### Q1: Why did Retry previously resume near the death position?
 - **Simple Answer**: The retry button changed the game state to Playing but forgot to reset the obstacle list, speed, score, and player position.
@@ -457,4 +522,22 @@ Native Web Audio API oscillators synthesize:
 ### Q13: How does the game render the Space Interceptor without 3D library performance overhead?
 - **Simple Answer**: It draws the futuristic spaceship directly on the 2D canvas with crisp geometric vector paths, glowing engine trails, and targeting lasers at a buttery 60+ FPS.
 - **Technical Answer**: The craft is rendered procedurally via Canvas 2D path transforms (`ctx.save()`, `ctx.beginPath()`, `ctx.lineTo()`, `ctx.arc()`, `ctx.restore()`) using hardware-accelerated 2D canvas blending. This delivers high-fidelity futuristic visuals with zero WebGL draw-call or memory overhead.
+
+---
+
+### Q14: How does the Interactive Tutorial teach players without walls of text?
+- **Simple Answer**: It drops the player into a holographic matrix with one action at a time (Jump $\to$ Squash $\to$ Dash). If you make a mistake, it rewinds the obstacle like a glitch without killing you so you can try again immediately.
+- **Technical Answer**: The tutorial runs on a dedicated sub-state machine (`BOOT`, `JUMP`, `SQUASH`, `DASH`, `COMBO`, `COMPLETE`) with holographic obstacle spawns moving at a calibrated $300\,\text{px/s}$. A collision triggers a non-lethal `REWIND` sub-state that applies a chromatic aberration glitch effect, rewinds obstacle position via linear interpolation, and resets player orientation without death screen disruption.
+
+---
+
+### Q15: How does the game guarantee offline persistence without crashing in private browsing mode?
+- **Simple Answer**: We wrap `localStorage` in a safe Storage Manager that catches errors and uses an in-memory Map fallback if the browser blocks cookies or storage.
+- **Technical Answer**: The `StorageManager` executes a pre-flight probe (`_checkStorageAvailability()`). All read/write operations (`_rawGet`, `_rawSet`) are shielded in `try/catch` blocks. If `localStorage` is disabled or throws a `QuotaExceededError`, operations divert to an in-memory `Map()`. Data inputs undergo strict type coercion (`_parseNonNegativeInt`, `_parseBool`), preventing `NaN` or `null` corruption.
+
+---
+
+### Q16: How does the tutorial seamlessly transition into the live endless run?
+- **Simple Answer**: When you clear the final combo stage, the holographic grid fades away and the cube transitions directly into the endless runner without loading screens.
+- **Technical Answer**: Stage 5 triggers a dematerialization phase (`dematerializeAlpha` fading over $1.6\,\text{s}$), sets `tutorialSeen = true` in storage, plays a resonant harmonic chord, and calls `startNewRun()` directly while preserving spatial cube position.
 

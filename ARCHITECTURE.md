@@ -1,6 +1,6 @@
 # BLOCK DASH — System Architecture & Technical Specifications
 
-> **System Overview**: High-Performance, Zero-Dependency HTML5 Canvas Arcade Engine with Delta-Time Physics, Squash & Dash Mechanics, Mid-Air Hazards, Space Interceptor Encounter Director, Predictive Targeting, Context-Aware Failure Analytics, and Supabase RLS Backend.
+> **System Overview**: High-Performance, Zero-Dependency HTML5 Canvas Arcade Engine with Delta-Time Physics, Squash & Dash Mechanics, Mid-Air Hazards, Space Interceptor Encounter Director, Predictive Targeting, Context-Aware Failure Analytics, Interactive 3D Holographic Training Simulation, and Defensive Client-Side Storage.
 
 ---
 
@@ -9,23 +9,25 @@
 ```mermaid
 graph TD
     subgraph Browser Client [Client Runtime]
-        HTML[index.html: Canvas, HUD & Touch Zones]
-        CSS[css/style.css: Arcade Styling & CRT]
+        HTML[index.html: Canvas, HUD, 3D Tutorial HUD & Modals]
+        CSS[css/style.css: Arcade Styling, CRT, Hologram Glows]
         
         subgraph Input Layer [Action Input Layer]
-            INP[bindActionInputs: Keyboard + Touch Zones]
+            INP[bindActionInputs: Keyboard + Mobile Touch Zones]
         end
 
         subgraph Engine Modules [ES6 Modular Engine]
-            CFG[js/config.js: Tunable Constants]
-            AUD[js/audio.js: Web Audio Synth: Jump, Dash, Beeps, Missiles]
+            CFG[js/config.js: Tunable Constants & Tutorial Settings]
+            AUD[js/audio.js: Web Audio Synth: Jump, Dash, Missiles, Tutorial Chimes]
             ROAST[js/roast.js: Multi-Mechanic Roast Engine]
-            LDR[js/leaderboard.js: Identity & Auth]
+            STRG[js/storage.js: Defensive Local Persistence & Stats Layer]
+            LDR[js/leaderboard.js: Local Records Wrapper]
             
             subgraph Game Engine [js/game.js Core]
                 DIR[Event Director: Pacing & Safety]
-                FSM[Game FSM: Intro, Menu, Play, Dead]
+                FSM[Game FSM: Intro, Menu, Tutorial, Play, Dead]
                 PHYS[Delta-Time Euler Physics & Jump/Squash/Dash]
+                TUT[Interactive 3D Holographic Training Simulation]
                 INT[Space Interceptor FSM & Predictive Targeting]
                 PROC[Procedural Generator & Rejection Sampling]
                 COLL[AABB Collision & Environmental Demolition]
@@ -33,24 +35,17 @@ graph TD
         end
     end
 
-    subgraph Backend Infrastructure [Cloud Database]
-        SB[(Supabase PostgreSQL)]
-        RLS[Row Level Security Engine]
-        AUTH[Anonymous Auth Service]
-    end
-
     HTML --> INP
     INP --> FSM
     CSS --> HTML
     CFG --> Game Engine
-    CFG --> LDR
+    CFG --> STRG
     CFG --> AUD
     AUD --> Game Engine
     ROAST --> Game Engine
+    STRG --> LDR
+    STRG --> Game Engine
     LDR --> Game Engine
-    LDR <--> AUTH
-    LDR <--> RLS
-    RLS <--> SB
 ```
 
 ---
@@ -64,13 +59,27 @@ stateDiagram-v2
     INTRO_IDLE --> INTRO_WARP: Trigger Starfield Warp
     INTRO_WARP --> INTRO_SLAM: Block Spins In
     INTRO_SLAM --> MENU: Ground Slammed
-    MENU --> PLAYING: startNewRun()
+    MENU --> TUTORIAL: First Launch / Training Sim Click
+    TUTORIAL --> PLAYING: Complete / Skip Training
+    MENU --> PLAYING: startNewRun() (Repeat Player)
     PLAYING --> PAUSED: Press P / ESC
     PAUSED --> PLAYING: Press Resume / P
     PAUSED --> MENU: Return to Menu
     PLAYING --> DEAD: AABB Hazard / Missile Collision
     DEAD --> PLAYING: startNewRun() (Instant Retry <16ms)
     DEAD --> MENU: Return to Menu
+```
+
+### B. Interactive 3D Tutorial Lifecycle
+```mermaid
+stateDiagram-v2
+    [*] --> STEP_0_BOOT: Calibration & Neural Link
+    STEP_0_BOOT --> STEP_1_JUMP: Motor Calibration (1.4s)
+    STEP_1_JUMP --> STEP_2_SQUASH: Cleared Spike Cleanly
+    STEP_2_SQUASH --> STEP_3_DASH: Cleared Overhead Laser
+    STEP_3_DASH --> STEP_4_COMBO: Cleared Double Spike
+    STEP_4_COMBO --> STEP_5_COMPLETE: Cleared Sequential Course
+    STEP_5_COMPLETE --> PLAYING: Dematerialize & Launch Live Run
 ```
 
 ### B. Space Interceptor Sub-FSM

@@ -16,9 +16,10 @@
  */
 
 import { CONFIG } from './config.js';
+import { storage } from './storage.js';
 import { audio } from './audio.js';
 import { roastEngine } from './roast.js';
-import { leaderboard } from './leaderboard.js';
+import { leaderboard, records } from './leaderboard.js';
 
 // --- Game State Enum ---
 export const GameState = Object.freeze({
@@ -26,6 +27,7 @@ export const GameState = Object.freeze({
   INTRO_WARP: 'INTRO_WARP',
   INTRO_SLAM: 'INTRO_SLAM',
   MENU: 'MENU',
+  TUTORIAL: 'TUTORIAL',
   PLAYING: 'PLAYING',
   PAUSED: 'PAUSED',
   DEAD: 'DEAD',
@@ -60,6 +62,7 @@ class GameEngine {
     this.lastTime = 0;
     this.deltaTime = 0;
     this.sessionAttempts = 0;
+    this.demolitionCount = 0;
 
     // Intro Cinematic Variables
     this.introTimer = 0;
@@ -88,6 +91,23 @@ class GameEngine {
     this.lastKillerType = 'single-spike';
     this.lastMissileVariant = null;
     this.lastMilestone = 0;
+
+    // --- Interactive 3D Holographic Training Simulation State ---
+    this.tutorial = {
+      active: false,
+      isReplay: false,
+      step: 0, // 0: BOOT, 1: JUMP, 2: SQUASH, 3: DASH, 4: COMBO, 5: COMPLETE
+      stepTimer: 0,
+      directive: '',
+      tip: '',
+      subState: 'APPROACH', // 'APPROACH', 'CLEAR', 'REWIND', 'ADVANCE'
+      rewindTimer: 0,
+      successTimer: 0,
+      simGridZ: 0,
+      glitchAlpha: 0,
+      dematerializeAlpha: 0,
+      trainingObstacles: [],
+    };
 
     // Player Entity
     this.player = {
@@ -165,21 +185,29 @@ class GameEngine {
       hudPb: document.getElementById('hud-pb'),
       hudSpeedFill: document.getElementById('hud-speed-fill'),
       hudDashFill: document.getElementById('hud-dash-fill'),
+      tutorialHud: document.getElementById('tutorial-hud'),
+      tutorialStepTag: document.getElementById('tutorial-step-tag'),
+      tutorialDirective: document.getElementById('tutorial-directive'),
+      tutorialTip: document.getElementById('tutorial-tip'),
+      btnSkipTutorial: document.getElementById('btn-skip-tutorial'),
       introOverlay: document.getElementById('intro-overlay'),
       menuOverlay: document.getElementById('menu-overlay'),
-      guideOverlay: document.getElementById('guide-overlay'),
       settingsOverlay: document.getElementById('settings-overlay'),
       pauseOverlay: document.getElementById('pause-overlay'),
       deathOverlay: document.getElementById('death-overlay'),
-      leaderboardOverlay: document.getElementById('leaderboard-overlay'),
+      recordsOverlay: document.getElementById('records-overlay'),
+      newPbBanner: document.getElementById('new-pb-banner'),
       deathScore: document.getElementById('death-score'),
       deathPb: document.getElementById('death-pb'),
-      deathRank: document.getElementById('death-rank'),
+      deathAttempts: document.getElementById('death-attempts'),
       roastCat: document.getElementById('roast-cat'),
       roastMsg: document.getElementById('roast-msg'),
       memeBadge: document.getElementById('meme-badge'),
       memeText: document.getElementById('meme-text'),
-      leaderboardRows: document.getElementById('leaderboard-rows'),
+      recPb: document.getElementById('rec-pb'),
+      recAttempts: document.getElementById('rec-attempts'),
+      recSurvival: document.getElementById('rec-survival'),
+      recDemolitions: document.getElementById('rec-demolitions'),
       playerNameInput: document.getElementById('player-name-input'),
       btnSaveName: document.getElementById('btn-save-name'),
       scanlineLayer: document.getElementById('scanline-layer'),
@@ -187,6 +215,7 @@ class GameEngine {
       sliderMasterVol: document.getElementById('slider-master-vol'),
       sliderMusicVol: document.getElementById('slider-music-vol'),
       sliderSfxVol: document.getElementById('slider-sfx-vol'),
+      btnResetTutorial: document.getElementById('btn-reset-tutorial'),
     };
 
     this.init();
@@ -213,8 +242,8 @@ class GameEngine {
     this.bindActionInputs();
     this.bindUIButtons();
 
-    this.dom.hudPb.textContent = leaderboard.getPersonalBest();
-    this.dom.playerNameInput.value = leaderboard.playerName;
+    this.dom.hudPb.textContent = storage.getBestScore();
+    this.dom.playerNameInput.value = storage.getPlayerName();
 
     this.setState(GameState.INTRO_IDLE);
 
@@ -243,11 +272,11 @@ class GameEngine {
 
     this.dom.introOverlay.classList.add('hidden');
     this.dom.menuOverlay.classList.add('hidden');
-    this.dom.guideOverlay.classList.add('hidden');
     this.dom.settingsOverlay.classList.add('hidden');
     this.dom.pauseOverlay.classList.add('hidden');
     this.dom.deathOverlay.classList.add('hidden');
-    this.dom.leaderboardOverlay.classList.add('hidden');
+    this.dom.recordsOverlay.classList.add('hidden');
+    this.dom.tutorialHud.classList.add('hidden');
     this.dom.hud.classList.add('hidden');
 
     switch (newState) {
@@ -266,6 +295,10 @@ class GameEngine {
       case GameState.MENU:
         this.dom.menuOverlay.classList.remove('hidden');
         this.resetRun();
+        break;
+
+      case GameState.TUTORIAL:
+        this.dom.tutorialHud.classList.remove('hidden');
         break;
 
       case GameState.PLAYING:
@@ -339,7 +372,7 @@ class GameEngine {
     this.shakeDuration = 0;
 
     this.dom.hudScore.textContent = '0';
-    this.dom.hudPb.textContent = leaderboard.getPersonalBest();
+    this.dom.hudPb.textContent = storage.getBestScore();
     this.dom.hudSpeedFill.style.width = '10%';
     this.dom.hudDashFill.style.width = '100%';
     this.dom.hudDashFill.className = 'dash-fill ready';
@@ -348,9 +381,20 @@ class GameEngine {
   startNewRun() {
     audio.init();
     this.sessionAttempts++;
+    storage.incrementAttempts();
     this.resetRun();
     this.setState(GameState.PLAYING);
     this.executeJumpImpulse();
+  }
+
+  handlePlayClick() {
+    audio.init();
+    audio.playClick();
+    if (!storage.hasSeenTutorial()) {
+      this.startTutorial(false);
+    } else {
+      this.startNewRun();
+    }
   }
 
   triggerJump() {
@@ -361,12 +405,17 @@ class GameEngine {
       return;
     }
 
-    if (this.state === GameState.MENU || this.state === GameState.DEAD) {
+    if (this.state === GameState.MENU) {
+      this.handlePlayClick();
+      return;
+    }
+
+    if (this.state === GameState.DEAD) {
       this.startNewRun();
       return;
     }
 
-    if (this.state === GameState.PLAYING) {
+    if (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL) {
       this.executeJumpImpulse();
     }
   }
@@ -397,7 +446,7 @@ class GameEngine {
   }
 
   startSquash() {
-    if (this.state !== GameState.PLAYING) return;
+    if (this.state !== GameState.PLAYING && this.state !== GameState.TUTORIAL) return;
     if (this.player.isSquashing) return;
 
     this.player.isSquashing = true;
@@ -468,7 +517,7 @@ class GameEngine {
   }
 
   triggerDash() {
-    if (this.state !== GameState.PLAYING) return;
+    if (this.state !== GameState.PLAYING && this.state !== GameState.TUTORIAL) return;
     if (this.player.isDashing || this.player.dashCooldownTimer > 0) return;
 
     this.player.isDashing = true;
@@ -522,11 +571,15 @@ class GameEngine {
     }
 
     const finalScore = Math.floor(this.score);
-    const pbBefore = leaderboard.getPersonalBest();
+    const pbBefore = storage.getBestScore();
     const result = await leaderboard.submitScore(finalScore, this.survivalTime);
+    const totalAttempts = storage.getAttempts();
 
     if (result.isNewPB) {
-      audio.playNewPB();
+      audio.playNewPersonalBest();
+      this.dom.newPbBanner.classList.remove('hidden');
+    } else {
+      this.dom.newPbBanner.classList.add('hidden');
     }
 
     const roast = roastEngine.generateRoast({
@@ -539,12 +592,13 @@ class GameEngine {
       missileVariant: this.lastMissileVariant,
       wasDashing: this.player.isDashing,
       wasSquashing: this.player.isSquashing,
-      attemptNumber: this.sessionAttempts
+      attemptNumber: totalAttempts
     });
 
-    this.dom.deathScore.textContent = finalScore;
-    this.dom.deathPb.textContent = result.pb;
-    this.dom.deathRank.textContent = result.globalRank;
+    this.dom.deathScore.textContent = finalScore.toLocaleString();
+    this.dom.deathPb.textContent = result.pb.toLocaleString();
+    this.dom.deathAttempts.textContent = totalAttempts.toLocaleString();
+    this.dom.hudPb.textContent = result.pb.toLocaleString();
     this.dom.roastCat.textContent = roast.category;
     this.dom.roastMsg.textContent = `"${roast.text}"`;
 
@@ -828,8 +882,11 @@ class GameEngine {
           this.obstacles.splice(j, 1);
           hitObstacle = true;
 
-          // Demolition Bonus
+          // Demolition Bonus & Statistics Tracking
           this.score += 150;
+          this.demolitionCount++;
+          storage.recordDemolition();
+
           this.floatingTexts.push({
             text: '+150 DEMOLITION',
             x: obs.x,
@@ -1192,6 +1249,11 @@ class GameEngine {
       return;
     }
 
+    if (this.state === GameState.TUTORIAL) {
+      this.updateTutorial(dt);
+      return;
+    }
+
     if (this.state !== GameState.PLAYING) {
       this.updateParticles(dt);
       return;
@@ -1351,6 +1413,13 @@ class GameEngine {
       if (this.state === GameState.INTRO_WARP) {
         this.render3DRotatingCube();
       }
+      this.ctx.restore();
+      return;
+    }
+
+    // 2b. Render Interactive 3D Tutorial Matrix
+    if (this.state === GameState.TUTORIAL) {
+      this.renderTutorial();
       this.ctx.restore();
       return;
     }
@@ -1772,6 +1841,445 @@ class GameEngine {
     requestAnimationFrame((time) => this.loop(time));
   }
 
+  /**
+   * ============================================================================
+   * INTERACTIVE 3D HOLOGRAPHIC TRAINING SIMULATION ("NEURAL MATRIX")
+   * ============================================================================
+   */
+  startTutorial(isReplay = false) {
+    audio.init();
+    this.resetRun();
+    this.tutorial.active = true;
+    this.tutorial.isReplay = isReplay;
+    this.tutorial.step = 0;
+    this.tutorial.stepTimer = 0;
+    this.tutorial.subState = 'APPROACH';
+    this.tutorial.rewindTimer = 0;
+    this.tutorial.successTimer = 0;
+    this.tutorial.glitchAlpha = 0;
+    this.tutorial.dematerializeAlpha = 0;
+    this.tutorial.simGridZ = 0;
+    this.tutorial.trainingObstacles = [];
+
+    this.setState(GameState.TUTORIAL);
+    this.loadTutorialStep(0);
+  }
+
+  skipTutorial() {
+    audio.init();
+    audio.playClick();
+    storage.markTutorialSeen();
+    this.tutorial.active = false;
+    if (this.tutorial.isReplay) {
+      this.setState(GameState.MENU);
+    } else {
+      this.startNewRun();
+    }
+  }
+
+  loadTutorialStep(stepIndex) {
+    this.tutorial.step = stepIndex;
+    this.tutorial.stepTimer = 0;
+    this.tutorial.subState = 'APPROACH';
+    this.tutorial.rewindTimer = 0;
+    this.tutorial.successTimer = 0;
+    this.tutorial.glitchAlpha = 0;
+    this.tutorial.trainingObstacles = [];
+
+    // Reset player position safely on ground
+    this.player.x = CONFIG.PLAYER.START_X;
+    this.player.y = this.groundY - CONFIG.PLAYER.HEIGHT;
+    this.player.w = CONFIG.PLAYER.WIDTH;
+    this.player.h = CONFIG.PLAYER.HEIGHT;
+    this.player.vy = 0;
+    this.player.rotation = 0;
+    this.player.isGrounded = true;
+    this.player.isSquashing = false;
+    this.player.wantsToUnsquash = false;
+    this.player.isDashing = false;
+    this.player.dashCooldownTimer = 0;
+
+    switch (stepIndex) {
+      case 0: // BOOT
+        this.dom.tutorialStepTag.textContent = 'CALIBRATION // INITIALIZING';
+        this.dom.tutorialDirective.textContent = 'NEURAL LINK CONNECTED';
+        this.dom.tutorialTip.textContent = 'Synchronizing motor controls. Prepare for tactical movement training...';
+        audio.playTutorialStep();
+        break;
+
+      case 1: // JUMP
+        this.dom.tutorialStepTag.textContent = 'STEP 1 OF 3 // THE LEAP';
+        this.dom.tutorialDirective.textContent = 'TAP SPACE / CLICK TO JUMP';
+        this.dom.tutorialTip.textContent = 'Time your leap to clear the holographic spike cleanly.';
+        audio.playTutorialStep();
+        this.spawnTutorialObstacle('spike', this.virtualWidth + 140, this.groundY - 36, 36, 36);
+        break;
+
+      case 2: // SQUASH
+        this.dom.tutorialStepTag.textContent = 'STEP 2 OF 3 // SQUASH & DUCK';
+        this.dom.tutorialDirective.textContent = 'HOLD S / ↓ TO SQUASH & DUCK';
+        this.dom.tutorialTip.textContent = 'Compress your chassis to slide safely under low-altitude laser bars.';
+        audio.playTutorialStep();
+        this.spawnTutorialObstacle('floating_bar', this.virtualWidth + 140, this.groundY - 50, 120, 22);
+        break;
+
+      case 3: // DASH
+        this.dom.tutorialStepTag.textContent = 'STEP 3 OF 3 // HYPER DASH';
+        this.dom.tutorialDirective.textContent = 'PRESS SHIFT / X TO DASH';
+        this.dom.tutorialTip.textContent = 'Trigger thruster burst for high-velocity clearance across hazard fields.';
+        audio.playTutorialStep();
+        this.spawnTutorialObstacle('double-spike', this.virtualWidth + 140, this.groundY - 36, 72, 36);
+        break;
+
+      case 4: // COMBO
+        this.dom.tutorialStepTag.textContent = 'FINAL EVALUATION // COMBAT REFLEX';
+        this.dom.tutorialDirective.textContent = 'CHAIN ACTIONS // JUMP, SQUASH, DASH';
+        this.dom.tutorialTip.textContent = 'Execute sequential maneuvers through the obstacle simulation grid.';
+        audio.playTutorialStep();
+        this.spawnTutorialObstacle('spike', this.virtualWidth + 140, this.groundY - 36, 36, 36);
+        this.spawnTutorialObstacle('floating_bar', this.virtualWidth + 440, this.groundY - 50, 110, 22);
+        this.spawnTutorialObstacle('double-spike', this.virtualWidth + 760, this.groundY - 36, 72, 36);
+        break;
+
+      case 5: // COMPLETE
+        this.dom.tutorialStepTag.textContent = 'TRAINING COMPLETE // COMBAT READY';
+        this.dom.tutorialDirective.textContent = 'SIMULATION COMPLETED';
+        this.dom.tutorialTip.textContent = 'Dematerializing matrix. Transferring to live combat sector...';
+        storage.markTutorialSeen();
+        audio.playTutorialComplete();
+        this.tutorial.dematerializeAlpha = 1;
+        break;
+    }
+  }
+
+  spawnTutorialObstacle(type, x, y, w, h) {
+    this.tutorial.trainingObstacles.push({
+      type,
+      initialX: x,
+      currentX: x,
+      x,
+      y,
+      w,
+      h,
+      cleared: false,
+    });
+  }
+
+  updateTutorial(dt) {
+    this.tutorial.stepTimer += dt;
+    this.tutorial.simGridZ = (this.tutorial.simGridZ + dt * 180) % 60;
+
+    if (this.tutorial.glitchAlpha > 0) {
+      this.tutorial.glitchAlpha = Math.max(0, this.tutorial.glitchAlpha - dt * 2.5);
+    }
+
+    // Step 0: Initial boot countdown
+    if (this.tutorial.step === 0) {
+      if (this.tutorial.stepTimer >= 1.4) {
+        this.loadTutorialStep(1);
+      }
+      this.updatePlayerPhysicsAndMovement(dt, 0);
+      this.updateParticles(dt);
+      return;
+    }
+
+    // Step 5: Dematerialization and launch
+    if (this.tutorial.step === 5) {
+      this.tutorial.dematerializeAlpha = Math.max(0, 1 - (this.tutorial.stepTimer / 1.6));
+      this.updatePlayerPhysicsAndMovement(dt, CONFIG.TUTORIAL.TRAINING_SPEED * 1.4);
+      this.updateParticles(dt);
+
+      if (this.tutorial.stepTimer >= 1.6) {
+        this.tutorial.active = false;
+        if (this.tutorial.isReplay) {
+          this.setState(GameState.MENU);
+        } else {
+          this.startNewRun();
+        }
+      }
+      return;
+    }
+
+    // Handle Sub-States (APPROACH, REWIND, CLEAR)
+    if (this.tutorial.subState === 'REWIND') {
+      this.tutorial.rewindTimer += dt;
+      const progress = Math.min(1, this.tutorial.rewindTimer / CONFIG.TUTORIAL.REWIND_DURATION);
+
+      for (const obs of this.tutorial.trainingObstacles) {
+        obs.x = obs.currentX + (obs.initialX - obs.currentX) * progress;
+      }
+
+      if (progress >= 1) {
+        this.tutorial.subState = 'APPROACH';
+        this.tutorial.rewindTimer = 0;
+        this.player.isSquashing = false;
+        this.player.h = CONFIG.PLAYER.HEIGHT;
+        this.player.w = CONFIG.PLAYER.WIDTH;
+        this.player.y = this.groundY - CONFIG.PLAYER.HEIGHT;
+        this.player.vy = 0;
+        this.player.isGrounded = true;
+      }
+
+      this.updateParticles(dt);
+      return;
+    }
+
+    if (this.tutorial.subState === 'CLEAR') {
+      this.tutorial.successTimer += dt;
+      this.updatePlayerPhysicsAndMovement(dt, CONFIG.TUTORIAL.TRAINING_SPEED);
+      this.updateParticles(dt);
+
+      if (this.tutorial.successTimer >= CONFIG.TUTORIAL.SUCCESS_PAUSE) {
+        this.loadTutorialStep(this.tutorial.step + 1);
+      }
+      return;
+    }
+
+    // Standard Tutorial Movement & Obstacle Progression
+    const trainingSpeed = CONFIG.TUTORIAL.TRAINING_SPEED;
+    const moveStep = trainingSpeed * dt;
+
+    this.updatePlayerPhysicsAndMovement(dt, trainingSpeed);
+
+    let allCleared = true;
+    for (const obs of this.tutorial.trainingObstacles) {
+      obs.x -= moveStep;
+
+      // Check if cleared player safely
+      if (!obs.cleared && obs.x + obs.w < this.player.x) {
+        obs.cleared = true;
+        audio.playTutorialSuccess();
+      }
+
+      if (!obs.cleared) {
+        allCleared = false;
+      }
+    }
+
+    // Check collision with training obstacles
+    if (this.checkTutorialCollisions()) {
+      this.triggerTutorialMistake();
+      return;
+    }
+
+    if (allCleared && this.tutorial.trainingObstacles.length > 0) {
+      this.tutorial.subState = 'CLEAR';
+      this.tutorial.successTimer = 0;
+    }
+
+    this.updateParticles(dt);
+  }
+
+  updatePlayerPhysicsAndMovement(dt, speed) {
+    // Dash timers
+    if (this.player.isDashing) {
+      this.player.dashTimer -= dt;
+      if (this.player.dashTimer <= 0) {
+        this.player.isDashing = false;
+      }
+    }
+    if (this.player.dashCooldownTimer > 0) {
+      this.player.dashCooldownTimer = Math.max(0, this.player.dashCooldownTimer - dt);
+    }
+
+    // Safe unsquash
+    if (this.player.wantsToUnsquash) {
+      this.performSafeUnsquash();
+    }
+
+    // Gravity & Grounding
+    if (!this.player.isGrounded) {
+      this.player.vy += CONFIG.PLAYER.GRAVITY * dt;
+      this.player.vy = Math.min(this.player.vy, CONFIG.PLAYER.MAX_FALL_SPEED);
+      this.player.y += this.player.vy * dt;
+
+      if (!this.player.isSquashing) {
+        this.player.rotation += (CONFIG.PLAYER.ROTATION_SPEED * dt) * (Math.PI / 180);
+      }
+
+      if (this.player.y + this.player.h >= this.groundY) {
+        this.player.y = this.groundY - this.player.h;
+        this.player.vy = 0;
+        this.player.isGrounded = true;
+        this.player.rotation = 0;
+        audio.playLand();
+      }
+    } else {
+      this.player.y = this.groundY - this.player.h;
+    }
+
+    // Player motion trail
+    this.player.trail.unshift({
+      x: this.player.x,
+      y: this.player.y,
+      w: this.player.w,
+      h: this.player.h,
+      rotation: this.player.rotation,
+      isDashing: this.player.isDashing,
+      alpha: 0.6
+    });
+    if (this.player.trail.length > CONFIG.VISUALS.TRAIL_MAX_LENGTH) {
+      this.player.trail.pop();
+    }
+  }
+
+  checkTutorialCollisions() {
+    const pad = CONFIG.PLAYER.HITBOX_PADDING;
+    const px = this.player.x + pad;
+    const py = this.player.y + pad;
+    const pw = this.player.w - (pad * 2);
+    const ph = this.player.h - (pad * 2);
+
+    for (const obs of this.tutorial.trainingObstacles) {
+      let obsPadX = 3;
+      let obsPadY = 3;
+
+      if (obs.type === 'spike' || obs.type === 'double-spike') {
+        obsPadX = 6;
+        obsPadY = 6;
+      }
+
+      const ox = obs.x + obsPadX;
+      const oy = obs.y + obsPadY;
+      const ow = obs.w - (obsPadX * 2);
+      const oh = obs.h - (obsPadY * 2);
+
+      if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  triggerTutorialMistake() {
+    audio.playTutorialGlitch();
+    this.addScreenShake(6, 0.25);
+    this.tutorial.subState = 'REWIND';
+    this.tutorial.rewindTimer = 0;
+    this.tutorial.glitchAlpha = 1;
+
+    for (const obs of this.tutorial.trainingObstacles) {
+      obs.currentX = obs.x;
+      obs.cleared = false;
+    }
+
+    for (let i = 0; i < 16; i++) {
+      this.particles.push({
+        x: this.player.x + Math.random() * this.player.w,
+        y: this.player.y + Math.random() * this.player.h,
+        vx: (Math.random() - 0.5) * 160,
+        vy: (Math.random() - 0.5) * 160,
+        size: Math.random() * 4 + 2,
+        color: CONFIG.COLORS.ACCENT_CYAN,
+        alpha: 0.9,
+        life: 0.35,
+        maxLife: 0.35
+      });
+    }
+  }
+
+  renderTutorial() {
+    this.render2DStars();
+    this.renderHolographicGrid();
+    this.renderGround();
+    this.renderTutorialObstacles();
+    this.renderParticles();
+    this.renderPlayer();
+    if (this.tutorial.glitchAlpha > 0) {
+      this.renderTutorialGlitch();
+    }
+  }
+
+  renderHolographicGrid() {
+    const horizonY = this.groundY - 140;
+    const vpX = this.virtualWidth / 2;
+    const numLines = 14;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = CONFIG.COLORS.ACCENT_CYAN;
+    this.ctx.lineWidth = 1;
+    this.ctx.globalAlpha = 0.22;
+
+    // Perspective lines fan out to ground
+    for (let i = 0; i <= numLines; i++) {
+      const bottomX = (this.virtualWidth / numLines) * i;
+      this.ctx.beginPath();
+      this.ctx.moveTo(vpX, horizonY);
+      this.ctx.lineTo(bottomX, this.groundY);
+      this.ctx.stroke();
+    }
+
+    // Transverse holographic scan lines scrolling forward
+    const gridSpacing = 24;
+    for (let yOffset = 0; yOffset < (this.groundY - horizonY); yOffset += gridSpacing) {
+      const scrollY = (yOffset + this.tutorial.simGridZ) % (this.groundY - horizonY);
+      const currentY = horizonY + scrollY;
+      const progress = scrollY / (this.groundY - horizonY);
+      const leftX = vpX - (vpX * progress);
+      const rightX = vpX + ((this.virtualWidth - vpX) * progress);
+
+      this.ctx.globalAlpha = 0.08 + progress * 0.25;
+      this.ctx.beginPath();
+      this.ctx.moveTo(leftX, currentY);
+      this.ctx.lineTo(rightX, currentY);
+      this.ctx.stroke();
+    }
+
+    this.ctx.restore();
+  }
+
+  renderTutorialObstacles() {
+    for (const obs of this.tutorial.trainingObstacles) {
+      this.ctx.save();
+      this.ctx.strokeStyle = CONFIG.COLORS.ACCENT_CYAN;
+      this.ctx.shadowColor = CONFIG.COLORS.ACCENT_CYAN;
+      this.ctx.shadowBlur = 8;
+
+      if (obs.type === 'spike' || obs.type === 'double-spike') {
+        const spikeCount = obs.type === 'double-spike' ? 2 : 1;
+        const singleW = obs.w / spikeCount;
+
+        for (let s = 0; s < spikeCount; s++) {
+          const sx = obs.x + s * singleW;
+          this.ctx.fillStyle = 'rgba(0, 245, 212, 0.25)';
+          this.ctx.beginPath();
+          this.ctx.moveTo(sx + singleW / 2, obs.y);
+          this.ctx.lineTo(sx + singleW, obs.y + obs.h);
+          this.ctx.lineTo(sx, obs.y + obs.h);
+          this.ctx.closePath();
+          this.ctx.fill();
+
+          this.ctx.lineWidth = 2;
+          this.ctx.stroke();
+        }
+      } else if (obs.type === 'floating_bar') {
+        this.ctx.fillStyle = 'rgba(0, 245, 212, 0.3)';
+        this.ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(obs.x + 6, obs.y + obs.h / 2 - 2, obs.w - 12, 4);
+      }
+
+      this.ctx.restore();
+    }
+  }
+
+  renderTutorialGlitch() {
+    this.ctx.save();
+    this.ctx.globalAlpha = this.tutorial.glitchAlpha * 0.45;
+    this.ctx.fillStyle = CONFIG.COLORS.ACCENT_CYAN;
+
+    for (let i = 0; i < 6; i++) {
+      const y = Math.random() * this.virtualHeight;
+      const h = Math.random() * 12 + 4;
+      const offsetX = (Math.random() - 0.5) * 40;
+      this.ctx.fillRect(offsetX, y, this.virtualWidth, h);
+    }
+    this.ctx.restore();
+  }
+
   bindActionInputs() {
     window.addEventListener('keydown', (e) => {
       if (this.state === GameState.INTRO_IDLE) {
@@ -1809,7 +2317,9 @@ class GameEngine {
       if (e.code === 'KeyP' || e.code === 'Escape') {
         e.preventDefault();
         audio.playClick();
-        if (this.state === GameState.PLAYING) {
+        if (this.state === GameState.TUTORIAL) {
+          this.skipTutorial();
+        } else if (this.state === GameState.PLAYING) {
           this.setState(GameState.PAUSED);
         } else if (this.state === GameState.PAUSED) {
           this.setState(GameState.PLAYING);
@@ -1890,17 +2400,15 @@ class GameEngine {
     });
 
     document.getElementById('btn-play').addEventListener('click', () => {
-      audio.playClick();
-      this.startNewRun();
+      this.handlePlayClick();
     });
 
-    document.getElementById('btn-open-leaderboard').addEventListener('click', () => {
-      this.openLeaderboard();
+    document.getElementById('btn-open-records').addEventListener('click', () => {
+      this.openRecords();
     });
 
-    document.getElementById('btn-open-guide').addEventListener('click', () => {
-      audio.playClick();
-      this.dom.guideOverlay.classList.remove('hidden');
+    document.getElementById('btn-open-tutorial').addEventListener('click', () => {
+      this.startTutorial(true);
     });
 
     document.getElementById('btn-open-settings').addEventListener('click', () => {
@@ -1908,14 +2416,8 @@ class GameEngine {
       this.dom.settingsOverlay.classList.remove('hidden');
     });
 
-    document.getElementById('btn-close-guide').addEventListener('click', () => {
-      audio.playClick();
-      this.dom.guideOverlay.classList.add('hidden');
-    });
-    document.getElementById('btn-guide-start').addEventListener('click', () => {
-      audio.playClick();
-      this.dom.guideOverlay.classList.add('hidden');
-      this.startNewRun();
+    document.getElementById('btn-skip-tutorial').addEventListener('click', () => {
+      this.skipTutorial();
     });
 
     document.getElementById('btn-close-settings').addEventListener('click', () => {
@@ -1926,6 +2428,17 @@ class GameEngine {
       audio.playClick();
       this.dom.settingsOverlay.classList.add('hidden');
     });
+
+    if (this.dom.btnResetTutorial) {
+      this.dom.btnResetTutorial.addEventListener('click', () => {
+        audio.playClick();
+        storage.resetTutorialStatus();
+        this.dom.btnResetTutorial.textContent = 'RESET! (READY)';
+        setTimeout(() => {
+          if (this.dom.btnResetTutorial) this.dom.btnResetTutorial.textContent = 'RESET TRAINING';
+        }, 1500);
+      });
+    }
 
     this.dom.sliderMasterVol.addEventListener('input', (e) => {
       audio.setMasterVolume(parseFloat(e.target.value));
@@ -1966,24 +2479,24 @@ class GameEngine {
       audio.playClick();
       this.startNewRun();
     });
-    document.getElementById('btn-death-leaderboard').addEventListener('click', () => {
-      this.openLeaderboard();
+    document.getElementById('btn-death-records').addEventListener('click', () => {
+      this.openRecords();
     });
     document.getElementById('btn-death-menu').addEventListener('click', () => {
       audio.playClick();
       this.setState(GameState.MENU);
     });
 
-    document.getElementById('btn-close-leaderboard').addEventListener('click', () => {
+    document.getElementById('btn-close-records').addEventListener('click', () => {
       audio.playClick();
-      this.dom.leaderboardOverlay.classList.add('hidden');
+      this.dom.recordsOverlay.classList.add('hidden');
     });
 
-    this.dom.btnSaveName.addEventListener('click', async () => {
+    this.dom.btnSaveName.addEventListener('click', () => {
       audio.playClick();
-      const updated = await leaderboard.setPlayerName(this.dom.playerNameInput.value);
+      const updated = storage.setPlayerName(this.dom.playerNameInput.value);
       this.dom.playerNameInput.value = updated;
-      await this.refreshLeaderboardView();
+      this.refreshRecordsView();
     });
 
     document.getElementById('btn-toggle-sound').addEventListener('click', () => this.toggleSound());
@@ -2010,33 +2523,19 @@ class GameEngine {
     }
   }
 
-  async openLeaderboard() {
+  openRecords() {
     audio.playClick();
-    this.dom.leaderboardOverlay.classList.remove('hidden');
-    await this.refreshLeaderboardView();
+    this.dom.recordsOverlay.classList.remove('hidden');
+    this.refreshRecordsView();
   }
 
-  async refreshLeaderboardView() {
-    this.dom.leaderboardRows.innerHTML = '<div class="leaderboard-row" style="justify-content: center; color: var(--text-muted);">Loading rankings...</div>';
-    const rows = await leaderboard.fetchTopScores(10);
-    this.dom.leaderboardRows.innerHTML = '';
-
-    rows.forEach((r) => {
-      const div = document.createElement('div');
-      div.className = `leaderboard-row ${r.isCurrentPlayer ? 'current-player' : ''}`;
-      
-      let rankClass = '';
-      if (r.rank === 1) rankClass = 'gold';
-      else if (r.rank === 2) rankClass = 'silver';
-      else if (r.rank === 3) rankClass = 'bronze';
-
-      div.innerHTML = `
-        <div class="rank-col ${rankClass}">#${r.rank}</div>
-        <div class="name-col">${this._escapeHtml(r.name)}</div>
-        <div class="score-col">${r.score.toLocaleString()}</div>
-      `;
-      this.dom.leaderboardRows.appendChild(div);
-    });
+  refreshRecordsView() {
+    const stats = storage.getStats();
+    this.dom.recPb.textContent = stats.personalBest.toLocaleString();
+    this.dom.recAttempts.textContent = stats.totalRuns.toLocaleString();
+    this.dom.recSurvival.textContent = `${stats.longestSurvival.toFixed(1)}s`;
+    this.dom.recDemolitions.textContent = stats.missileDemolitions.toLocaleString();
+    this.dom.playerNameInput.value = storage.getPlayerName();
   }
 
   _escapeHtml(str) {

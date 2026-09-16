@@ -667,6 +667,155 @@ class SoundEngine {
     osc.start(now);
     osc.stop(now + 0.05);
   }
+
+  // =========================================================================
+  // INTERACTIVE 3D TUTORIAL / TRAINING SIMULATION SOUNDS
+  // =========================================================================
+
+  /**
+   * High-tech step progression chime.
+   */
+  playTutorialStep() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, now); // D5
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+
+    gain.gain.setValueAtTime(0.25 * CONFIG.AUDIO.SFX_VOLUME, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  /**
+   * Ascending harmonic confirmation chime (C-E-G triad).
+   */
+  playTutorialSuccess() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+    const now = this.ctx.currentTime;
+    const triad = [523.25, 659.25, 783.99]; // C5, E5, G5
+
+    triad.forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const t = now + idx * 0.06;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+
+      gain.gain.setValueAtTime(0.24 * CONFIG.AUDIO.SFX_VOLUME, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    });
+  }
+
+  /**
+   * Gentle holographic glitch / rewind on training mistake.
+   */
+  playTutorialGlitch() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(240, now);
+    osc.frequency.linearRampToValueAtTime(120, now + 0.15);
+
+    gain.gain.setValueAtTime(0.18 * CONFIG.AUDIO.SFX_VOLUME, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  /**
+   * Resonant hyper-drive simulation completion chord + sub-bass pulse.
+   */
+  playTutorialComplete() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+    const now = this.ctx.currentTime;
+    const freqs = [329.63, 493.88, 659.25, 987.77]; // E major 7th
+
+    freqs.forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const t = now + idx * 0.07;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, t + 0.6);
+
+      gain.gain.setValueAtTime(0.22 * CONFIG.AUDIO.SFX_VOLUME, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t);
+      osc.stop(t + 0.85);
+    });
+
+    // Sub-bass sweep
+    const sub = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(140, now);
+    sub.frequency.exponentialRampToValueAtTime(40, now + 0.7);
+
+    subGain.gain.setValueAtTime(0.35 * CONFIG.AUDIO.SFX_VOLUME, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+    sub.connect(subGain);
+    subGain.connect(this.sfxGain);
+    sub.start(now);
+    sub.stop(now + 0.75);
+  }
+
+  /**
+   * Triumphant Victory Arpeggio when the player scores a NEW PERSONAL BEST.
+   */
+  playNewPersonalBest() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+    const now = this.ctx.currentTime;
+    const arpeggio = [440, 554.37, 659.25, 880, 1108.73]; // A major triumphant run
+
+    arpeggio.forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const t = now + idx * 0.07;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+
+      gain.gain.setValueAtTime(0.3 * CONFIG.AUDIO.SFX_VOLUME, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+  }
 }
 
 export const audio = new SoundEngine();
+

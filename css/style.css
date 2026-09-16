@@ -786,3 +786,188 @@ input[type=range]::-webkit-slider-thumb {
     display: block;
   }
 }
+
+/* =========================================================================
+   INTERACTIVE 3D TUTORIAL / TRAINING SIMULATION HUD
+   ========================================================================= */
+.tutorial-hud {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 720px;
+  z-index: 15;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: holoFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes holoFadeIn {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.tutorial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.holo-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent-cyan);
+  background: rgba(0, 245, 212, 0.12);
+  border: 1px solid rgba(0, 245, 212, 0.4);
+  padding: 4px 12px;
+  border-radius: 4px;
+  text-shadow: 0 0 10px rgba(0, 245, 212, 0.6);
+  display: inline-flex;
+  align-items: center;
+}
+
+.skip-btn {
+  pointer-events: auto;
+  background: rgba(14, 16, 23, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.skip-btn:hover {
+  color: var(--danger-crimson);
+  border-color: var(--danger-crimson);
+  background: rgba(255, 42, 85, 0.15);
+}
+
+.tutorial-card {
+  background: rgba(9, 11, 16, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 245, 212, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 245, 212, 0.15);
+  border-radius: 8px;
+  padding: 14px 20px;
+  text-align: center;
+}
+
+.tutorial-step {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  color: var(--accent-amber);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.tutorial-directive {
+  font-size: clamp(16px, 2.8vw, 22px);
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.4);
+}
+
+.tutorial-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* =========================================================================
+   CELEBRATORY NEW PERSONAL BEST BADGE
+   ========================================================================= */
+.new-pb-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #ff9f1c, #ffe600);
+  color: #050608;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  margin-bottom: 10px;
+  box-shadow: 0 0 20px rgba(255, 159, 28, 0.8), 0 0 40px rgba(255, 230, 0, 0.4);
+  animation: pbPulse 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes pbPulse {
+  from { transform: scale(1); box-shadow: 0 0 15px rgba(255, 159, 28, 0.6); }
+  to { transform: scale(1.06); box-shadow: 0 0 30px rgba(255, 230, 0, 0.9); }
+}
+
+/* =========================================================================
+   LOCAL RECORDS & STATS MODAL
+   ========================================================================= */
+.records-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.record-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.record-card.highlight {
+  border-color: rgba(255, 159, 28, 0.4);
+  background: rgba(255, 159, 28, 0.06);
+}
+
+.record-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.record-val {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.record-val.amber { color: var(--accent-amber); text-shadow: var(--glow-amber); }
+.record-val.cyan { color: var(--accent-cyan); text-shadow: var(--glow-cyan); }
+.record-val.pink { color: var(--accent-pink); }
+
+.record-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.storage-notice {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
