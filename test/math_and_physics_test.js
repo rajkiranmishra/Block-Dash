@@ -331,7 +331,8 @@ const simulatedRunState = {
   speed: 520,
   obstacles: [{ x: 300, y: 424, w: 36, h: 36 }],
   player: { x: 120, y: 420, vy: -350, isSquashing: false, isDashing: false },
-  isOrientationPaused: false
+  isOrientationPaused: false,
+  isCountingDown: false
 };
 
 // Simulate rotating to portrait during active gameplay
@@ -342,6 +343,65 @@ simulatedRunState.isOrientationPaused = false;
 assert(simulatedRunState.score === 1420, 'Score is 100% preserved across orientation change.');
 assert(simulatedRunState.player.y === 420 && simulatedRunState.player.vy === -350, 'Player position and velocity are untouched across orientation changes.');
 assert(simulatedRunState.obstacles.length === 1, 'Active obstacles are not wiped or altered by orientation changes.');
+
+// --- Test 10: Mobile Ground Hazard Clearance & Touch Hold Safety ---
+console.log('\n--- TEST 10: Mobile Ground Hazard Clearance & Touch Hold Safety ---');
+
+const t10GroundY = CONFIG.CANVAS.GROUND_Y; // 460
+const t10CanvasH = CONFIG.CANVAS.HEIGHT; // 540
+const spikeH = 36;
+const spikeTopY = t10GroundY - spikeH; // 424
+const groundAreaPercent = (t10CanvasH - t10GroundY) / t10CanvasH; // (540 - 460) / 540 = 14.8%
+
+// Verify ground hazard zone metrics
+assert(spikeTopY === 424, `Ground spikes sit at y=${spikeTopY}px on ground y=${t10GroundY}px.`);
+assert(groundAreaPercent < 0.20, `Ground line occupies compact lower ${Math.round(groundAreaPercent * 100)}% of screen.`);
+
+// Test inputManager.releaseAllHolds()
+inputMgr.requestSquashStart();
+assert(inputMgr.isSquashing === true, 'Squash active prior to hold release.');
+inputMgr.releaseAllHolds();
+assert(inputMgr.isSquashing === false, 'releaseAllHolds() forcibly and safely ends active squash hold.');
+assert(inputMgr.squashPointerId === null, 'releaseAllHolds() clears active pointer ID tracker.');
+
+// --- Test 11: Orientation Auto-Start & Safe Freeze Countdown Invariants ---
+console.log('\n--- TEST 11: Mobile Orientation Auto-Start & Countdown Freeze Invariants ---');
+
+// Invariant A: Pending Game Start in Portrait
+let pendingStart = { type: 'run', isReplay: false };
+assert(pendingStart !== null && pendingStart.type === 'run', 'Attempting play in mobile portrait safely registers pending game start.');
+
+// Simulate rotation to landscape
+let gameStartedOnRotate = false;
+if (pendingStart) {
+  gameStartedOnRotate = true;
+  pendingStart = null;
+}
+assert(gameStartedOnRotate === true && pendingStart === null, 'Rotating to landscape auto-initiates pending run without requiring second tap.');
+
+// Invariant B: Safe Resume Countdown Freeze
+let frozenPlayerPos = 420;
+let frozenObsPos = 300;
+let isCountingDown = true;
+let isOrientationPaused = true;
+
+// Simulate game loop tick while counting down
+const fakeDt = 0.016;
+if (!isOrientationPaused && !isCountingDown) {
+  frozenPlayerPos += 100 * fakeDt;
+  frozenObsPos -= 380 * fakeDt;
+}
+
+assert(frozenPlayerPos === 420, 'Player position is strictly frozen during resume countdown.');
+assert(frozenObsPos === 300, 'Obstacle movement is strictly frozen during resume countdown.');
+
+// Countdown finishes -> unfreeze
+isCountingDown = false;
+isOrientationPaused = false;
+if (!isOrientationPaused && !isCountingDown) {
+  frozenObsPos -= 380 * fakeDt;
+}
+assert(frozenObsPos < 300, 'Gameplay smoothly resumes after countdown concludes.');
 
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);

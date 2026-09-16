@@ -68,6 +68,21 @@ class GameEngine {
     this.sessionAttempts = 0;
     this.demolitionCount = 0;
     this.isOrientationPaused = false;
+    this.isCountingDown = false;
+    this.countdownTimerId = null;
+    this.pendingGameStart = null;
+    this.introSlamTriggered = false;
+
+    // World & Hazards
+    this.obstacles = [];
+    this.particles = [];
+    this.groundOffset = 0;
+    this.nextSpawnX = this.virtualWidth + 140;
+
+    // Screen Shake
+    this.shakeTime = 0;
+    this.shakeDuration = 0;
+    this.shakeIntensity = 0;
 
     // Intro Cinematic Variables
     this.introTimer = 0;
@@ -160,17 +175,6 @@ class GameEngine {
     this.missiles = [];
     this.floatingTexts = [];
 
-    // World & Environment
-    this.obstacles = [];
-    this.particles = [];
-    this.groundOffset = 0;
-    this.nextSpawnX = this.virtualWidth + 140;
-
-    // Screen Shake
-    this.shakeTime = 0;
-    this.shakeDuration = 0;
-    this.shakeIntensity = 0;
-
     // Jump Trajectory Math
     this.jumpRiseTime = -CONFIG.PLAYER.JUMP_FORCE / CONFIG.PLAYER.GRAVITY;
     this.jumpMaxHeight = (CONFIG.PLAYER.JUMP_FORCE ** 2) / (2 * CONFIG.PLAYER.GRAVITY);
@@ -193,6 +197,10 @@ class GameEngine {
       touchDashZone: document.getElementById('touch-dash-zone'),
       dashCircleFill: document.getElementById('dash-circle-fill'),
       rotatePrompt: document.getElementById('rotate-prompt'),
+      rotateStatusMsg: document.getElementById('rotate-status-msg'),
+      countdownOverlay: document.getElementById('countdown-overlay'),
+      countdownNumber: document.getElementById('countdown-number'),
+      countdownSub: document.getElementById('countdown-sub'),
       introPrompt: document.querySelector('.intro-prompt'),
       tutorialHud: document.getElementById('tutorial-hud'),
       tutorialStepTag: document.getElementById('tutorial-step-tag'),
@@ -283,24 +291,126 @@ class GameEngine {
   checkOrientation() {
     if (typeof window === 'undefined') return;
     const isPortrait = window.innerHeight > window.innerWidth;
-    const isMobile = this.inputManager.isMobile();
+    const isMobile = this.inputManager && this.inputManager.isMobile();
 
-    if (isMobile && isPortrait && (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL)) {
-      if (!this.isOrientationPaused) {
-        this.isOrientationPaused = true;
+    // Desktop mode safety: never show rotation warning or mobile overlays
+    if (!isMobile) {
+      this.isOrientationPaused = false;
+      if (this.dom.rotatePrompt) this.dom.rotatePrompt.classList.add('hidden');
+      if (this.dom.countdownOverlay) this.dom.countdownOverlay.classList.add('hidden');
+      this.resizeCanvas();
+      return;
+    }
+
+    if (isPortrait) {
+      // Mobile in Portrait mode
+      if (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL) {
+        if (!this.isOrientationPaused) {
+          this.isOrientationPaused = true;
+          this.inputManager.releaseAllHolds();
+          if (this.isCountingDown) {
+            clearTimeout(this.countdownTimerId);
+            this.isCountingDown = false;
+          }
+          if (this.dom.countdownOverlay) {
+            this.dom.countdownOverlay.classList.add('hidden');
+          }
+          if (this.dom.rotateStatusMsg) {
+            this.dom.rotateStatusMsg.textContent = 'GAME PAUSED // ROTATE TO CONTINUE';
+          }
+          if (this.dom.rotatePrompt) {
+            this.dom.rotatePrompt.classList.remove('hidden');
+          }
+        }
+      } else if (this.pendingGameStart) {
+        if (this.dom.rotateStatusMsg) {
+          this.dom.rotateStatusMsg.textContent = 'ROTATE YOUR PHONE';
+        }
         if (this.dom.rotatePrompt) {
           this.dom.rotatePrompt.classList.remove('hidden');
         }
       }
     } else {
-      if (this.isOrientationPaused) {
-        this.isOrientationPaused = false;
-        if (this.dom.rotatePrompt) {
-          this.dom.rotatePrompt.classList.add('hidden');
-        }
-        this.resizeCanvas();
+      // Mobile in Landscape mode
+      if (this.dom.rotatePrompt) {
+        this.dom.rotatePrompt.classList.add('hidden');
       }
+
+      // Case A: Starting a pending game upon rotation
+      if (this.pendingGameStart) {
+        const pending = this.pendingGameStart;
+        this.pendingGameStart = null;
+        if (pending.type === 'tutorial') {
+          this.startTutorial(pending.isReplay);
+        } else {
+          this.startNewRun();
+        }
+      } 
+      // Case B: Resuming from an active gameplay orientation pause
+      else if (this.isOrientationPaused && (this.state === GameState.PLAYING || this.state === GameState.TUTORIAL)) {
+        this.startSafeResumeCountdown();
+      }
+
+      this.resizeCanvas();
     }
+  }
+
+  /**
+   * Safe Resume Countdown: Freezes physics while counting down 3 -> 2 -> 1 -> GO!
+   */
+  startSafeResumeCountdown() {
+    if (this.isCountingDown) return;
+    this.isCountingDown = true;
+    if (this.countdownTimerId) clearTimeout(this.countdownTimerId);
+
+    if (this.dom.countdownOverlay) {
+      this.dom.countdownOverlay.classList.remove('hidden');
+    }
+
+    const steps = [
+      { text: '3', isGo: false, sub: 'SYNCHRONIZING REFLEXES...' },
+      { text: '2', isGo: false, sub: 'CALIBRATING VECTOR ENGINES...' },
+      { text: '1', isGo: false, sub: 'SYSTEMS ONLINE...' },
+      { text: 'GO!', isGo: true, sub: 'NO EXCUSES.' }
+    ];
+
+    let currentStep = 0;
+
+    const tick = () => {
+      // Abort countdown if rotated back to portrait
+      if (typeof window !== 'undefined' && window.innerHeight > window.innerWidth && this.inputManager.isMobile()) {
+        this.isCountingDown = false;
+        if (this.dom.countdownOverlay) this.dom.countdownOverlay.classList.add('hidden');
+        this.checkOrientation();
+        return;
+      }
+
+      if (currentStep < steps.length) {
+        const item = steps[currentStep];
+        if (this.dom.countdownNumber) {
+          this.dom.countdownNumber.textContent = item.text;
+          this.dom.countdownNumber.className = item.isGo ? 'countdown-val go' : 'countdown-val';
+          this.dom.countdownNumber.style.animation = 'none';
+          void this.dom.countdownNumber.offsetHeight;
+          this.dom.countdownNumber.style.animation = '';
+        }
+        if (this.dom.countdownSub) {
+          this.dom.countdownSub.textContent = item.sub;
+        }
+
+        audio.playCountdownTick(item.isGo);
+        currentStep++;
+        this.countdownTimerId = setTimeout(tick, item.isGo ? 400 : 500);
+      } else {
+        this.isCountingDown = false;
+        this.isOrientationPaused = false;
+        if (this.dom.countdownOverlay) {
+          this.dom.countdownOverlay.classList.add('hidden');
+        }
+      }
+    };
+
+    tick();
   }
 
   resizeCanvas() {
@@ -451,6 +561,25 @@ class GameEngine {
   handlePlayClick() {
     audio.init();
     audio.playClick();
+
+    const isMobile = this.inputManager && this.inputManager.isMobile();
+    const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+
+    if (isMobile && isPortrait) {
+      const needsTutorial = !storage.hasSeenTutorial();
+      this.pendingGameStart = {
+        type: needsTutorial ? 'tutorial' : 'run',
+        isReplay: false
+      };
+      if (this.dom.rotateStatusMsg) {
+        this.dom.rotateStatusMsg.textContent = 'ROTATE YOUR PHONE';
+      }
+      if (this.dom.rotatePrompt) {
+        this.dom.rotatePrompt.classList.remove('hidden');
+      }
+      return;
+    }
+
     if (!storage.hasSeenTutorial()) {
       this.startTutorial(false);
     } else {
@@ -1210,6 +1339,10 @@ class GameEngine {
    * Main Delta-Time Physics & Entity Update
    */
   update(dt) {
+    if (this.isOrientationPaused || this.isCountingDown) {
+      return;
+    }
+
     if (this.shakeTime > 0) {
       this.shakeTime -= dt;
     }
@@ -1932,6 +2065,24 @@ class GameEngine {
    */
   startTutorial(isReplay = false) {
     audio.init();
+
+    const isMobile = this.inputManager && this.inputManager.isMobile();
+    const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+
+    if (isMobile && isPortrait) {
+      this.pendingGameStart = {
+        type: 'tutorial',
+        isReplay
+      };
+      if (this.dom.rotateStatusMsg) {
+        this.dom.rotateStatusMsg.textContent = 'ROTATE YOUR PHONE';
+      }
+      if (this.dom.rotatePrompt) {
+        this.dom.rotatePrompt.classList.remove('hidden');
+      }
+      return;
+    }
+
     this.resetRun();
     this.tutorial.active = true;
     this.tutorial.isReplay = isReplay;

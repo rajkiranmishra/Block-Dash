@@ -346,15 +346,29 @@
       <section id="rotate-prompt" class="ui-overlay hidden" aria-live="assertive">
         <div class="rotate-content">
           <div class="rotate-icon-wrap">
-            <svg class="rotate-phone-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="rotate-phone-icon" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
               <line x1="12" y1="18" x2="12.01" y2="18"></line>
             </svg>
             <div class="rotate-arrow">↻</div>
           </div>
           <h2 class="rotate-title">BLOCK <span>DASH</span></h2>
-          <div class="rotate-prompt-text">ROTATE DEVICE</div>
-          <p class="rotate-sub">BEST EXPERIENCED IN LANDSCAPE</p>
+          <div id="rotate-status-msg" class="rotate-prompt-text">ROTATE YOUR PHONE</div>
+          <div class="rotate-badge">LANDSCAPE MODE RECOMMENDED</div>
+          <div class="rotate-reasons">
+            <span class="reason-item">✦ MORE ROOM</span>
+            <span class="reason-item">✦ MORE VISIBILITY</span>
+            <span class="reason-item">✦ FEWER EXCUSES</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. SAFE RESUME COUNTDOWN OVERLAY -->
+      <section id="countdown-overlay" class="ui-overlay hidden" aria-live="assertive">
+        <div class="countdown-wrap">
+          <div class="countdown-tag">NEURAL LINK RESTORED</div>
+          <div id="countdown-number" class="countdown-val">3</div>
+          <div id="countdown-sub" class="countdown-sub">SYNCHRONIZING REFLEXES...</div>
         </div>
       </section>
 

@@ -815,6 +815,33 @@ class SoundEngine {
       osc.stop(t + 0.3);
     });
   }
+
+  /**
+   * Safe Resume Countdown Audio Cue (3, 2, 1, GO!)
+   */
+  playCountdownTick(isFinal = false) {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = isFinal ? 'triangle' : 'sine';
+    const freq = isFinal ? 880 : 520;
+    osc.frequency.setValueAtTime(freq, now);
+    if (isFinal) {
+      osc.frequency.exponentialRampToValueAtTime(1040, now + 0.22);
+    }
+
+    const vol = (isFinal ? 0.35 : 0.22) * CONFIG.AUDIO.SFX_VOLUME;
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (isFinal ? 0.28 : 0.16));
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + (isFinal ? 0.3 : 0.18));
+  }
 }
 
 export const audio = new SoundEngine();

@@ -495,16 +495,23 @@ Physical inputs from keyboard, mouse, and pointer events are translated into sem
 - **RETRY**: <kbd>R</kbd>, <kbd>SPACE</kbd> (when dead), or Tap on the mobile `[ RETRY NOW ]` button.
 - **PAUSE**: <kbd>ESC</kbd>, <kbd>P</kbd>.
 
-### Mobile Touch Ergonomics & Visual Feedback
-1. **Large Tap Jump Zone**: Covers top 68% of the viewport with a tactile expanding neon ripple (`.touch-ripple`).
-2. **Bottom-Left Hold Squash Zone**: Generous thumb target ($\ge 58\text{px}$ height) with glassmorphism surface and compression animation when pressed.
-3. **Bottom-Right Tap Dash Button**: Dedicated button with a circular SVG progress ring tracking cooldown ($1.2\text{s}$), dimming when cooling down, and pulsing when ready.
-4. **Multitouch Safety**: Independent pointer IDs allow simultaneous actions (holding Squash with left thumb while tapping Dash with right thumb).
+### Mobile Touch Ergonomics & Ground Hazard Clearance
+1. **The Ground Hazard Safe Zone Rule**: "THE UI MAY NEVER HIDE THE DANGER."
+   - Ground obstacles (spikes at $y = 424$, blocks at $y = 420$, low missiles at $y = 442$) move across the screen along the ground line at $y = 460$.
+   - Mobile buttons (`.touch-zone-squash` and `.touch-zone-dash`) are designed with lightweight, translucent wireframes (`opacity: 0.40`, `rgba(10, 14, 24, 0.40)`) and tucked into the absolute bottom corners.
+   - Generous invisible touch hit targets ($\ge 76\text{px} \times 70\text{px}$ via `::before` pseudo-elements) allow effortless thumb interaction while keeping the visible button compact ($56\text{px} \times 44\text{px}$).
+   - The entire run trajectory and ground hazard approach path remains 100% visible and unoccluded.
+2. **Large Tap Jump Zone**: Covers the top 75% of the viewport with a tactile expanding neon ripple (`.touch-ripple`).
+3. **Bottom-Left Hold Squash Zone**: Compact translucent pill button with squash hold safety (`pointerdown` enables squash; `pointerup`, `pointercancel`, `pointerleave`, or `releaseAllHolds()` immediately unsquashes).
+4. **Bottom-Right Tap Dash Button**: Dedicated button with a circular SVG progress ring tracking cooldown ($1.2\text{s}$), dimming when cooling down, and pulsing when ready.
+5. **Multitouch Safety**: Independent pointer IDs allow simultaneous actions (holding Squash with left thumb while tapping Dash with right thumb).
 
-### Orientation Handling & Safe Run Freeze
-BLOCK DASH is optimized for landscape action gameplay:
-- If a mobile device enters **portrait** orientation during `PLAYING` or `TUTORIAL`, the game displays the `#rotate-prompt` overlay (`↻ ROTATE DEVICE - BEST EXPERIENCED IN LANDSCAPE`) and safely suspends the delta-time update loop.
-- When rotated back to **landscape**, the prompt is hidden, the canvas is resized to match device aspect ratio, and gameplay continues without resetting score, player coordinates, or active hazards.
+### Orientation Handling, Auto-Start, and Safe Resume Countdown
+BLOCK DASH enforces landscape orientation for active gameplay while keeping menus, settings, and pilot records accessible in portrait:
+1. **Starting in Portrait**: If a player taps `PLAY` or `TRAINING SIM` in portrait mode on mobile, the game registers a pending start (`pendingGameStart`) and displays the Cyberpunk `#rotate-prompt` (`↻ ROTATE YOUR PHONE - LANDSCAPE RECOMMENDED`). Physics is not ticked in the background.
+2. **Auto-Start on Rotation**: As soon as the user rotates into landscape, the orientation listener detects the change, automatically dismisses the prompt, and launches the game/tutorial without requiring a second tap.
+3. **Orientation Change During Active Gameplay**: If the device is flipped to portrait during an active run, the engine pauses delta-time updates, releases any active squash hold, and displays `GAME PAUSED // ROTATE TO CONTINUE`.
+4. **Safe Resume Countdown**: Returning to landscape does not unpause instantly into an obstacle. Instead, the game presents a frozen countdown overlay (`READY... 3... 2... 1... GO!`) with audio beeps and pulsating numerals. During this countdown, physics and obstacle movements remain strictly frozen. Once the countdown completes, gameplay resumes smoothly with score, distance, player coordinates, and obstacles 100% preserved.
 
 ### Safe-Area Inset Support
 All mobile HUD elements, top control bars, and touch buttons incorporate CSS safe-area insets:

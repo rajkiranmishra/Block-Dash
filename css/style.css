@@ -72,6 +72,7 @@ html, body {
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   max-width: 100%;
   max-height: 100%;
   display: flex;
@@ -87,6 +88,7 @@ html, body {
   position: relative;
   width: 100%;
   max-width: min(960px, calc(100vh * 16 / 9 - 30px));
+  max-width: min(960px, calc(100dvh * 16 / 9 - 24px));
   aspect-ratio: var(--canvas-aspect-ratio);
   background-color: #000;
   border-radius: 8px;
@@ -247,7 +249,7 @@ html, body {
 }
 
 /* =========================================================================
-   MOBILE TOUCH CONTROLS & ERGONOMICS
+   MOBILE TOUCH CONTROLS & GROUND HAZARD VISIBILITY SAFE ZONE
    ========================================================================= */
 #mobile-touch-container {
   display: none;
@@ -258,103 +260,127 @@ html, body {
   touch-action: none;
 }
 
+/* Primary Play Region Tap-to-Jump Zone (Covers upper/middle screen) */
 .touch-zone-jump {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 68%;
+  height: 75%;
   pointer-events: auto;
   touch-action: none;
 }
 
+/* Compact Translucent Bottom-Left Squash Button */
 .touch-zone-squash {
   position: absolute;
-  bottom: max(14px, env(safe-area-inset-bottom));
-  left: max(14px, env(safe-area-inset-left));
-  width: clamp(140px, 30vw, 200px);
-  height: clamp(58px, 22vh, 84px);
-  background: rgba(21, 24, 36, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 2px dashed rgba(255, 159, 28, 0.5);
-  border-radius: 12px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: max(10px, env(safe-area-inset-left));
+  width: clamp(100px, 20vw, 130px);
+  height: clamp(42px, 11vh, 50px);
+  background: rgba(10, 14, 24, 0.40);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1.5px dashed rgba(255, 159, 28, 0.45);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  color: var(--accent-amber);
+  gap: 6px;
+  color: rgba(255, 159, 28, 0.85);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   pointer-events: auto;
   touch-action: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease, opacity 0.15s ease;
+  opacity: 0.42;
+}
+
+/* Generous Invisible Touch Target Area for Squash (Expands hit area without covering screen) */
+.touch-zone-squash::before {
+  content: '';
+  position: absolute;
+  inset: -14px -12px;
+  pointer-events: auto;
 }
 
 .touch-zone-squash.active, .touch-zone-squash:active {
-  transform: scale(0.93);
-  background: rgba(255, 159, 28, 0.3);
+  opacity: 0.95;
+  transform: scale(0.94);
+  background: rgba(255, 159, 28, 0.35);
   border-color: var(--accent-amber);
-  box-shadow: var(--glow-amber), 0 0 25px rgba(255, 159, 28, 0.6);
-  color: #fff;
+  box-shadow: var(--glow-amber), 0 0 20px rgba(255, 159, 28, 0.6);
+  color: #ffffff;
 }
 
+/* Compact Translucent Bottom-Right Dash Button */
 .touch-zone-dash {
   position: absolute;
-  bottom: max(14px, env(safe-area-inset-bottom));
-  right: max(14px, env(safe-area-inset-right));
-  width: clamp(130px, 28vw, 180px);
-  height: clamp(58px, 22vh, 84px);
-  background: rgba(21, 24, 36, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 2px solid rgba(0, 245, 212, 0.4);
-  border-radius: 12px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  right: max(10px, env(safe-area-inset-right));
+  width: clamp(90px, 18vw, 120px);
+  height: clamp(42px, 11vh, 50px);
+  background: rgba(10, 14, 24, 0.40);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1.5px solid rgba(0, 245, 212, 0.45);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  color: var(--accent-cyan);
+  gap: 6px;
+  color: rgba(0, 245, 212, 0.85);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   pointer-events: auto;
   touch-action: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  transition: transform 0.08s ease, background 0.08s ease, opacity 0.15s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease, opacity 0.15s ease;
+  opacity: 0.45;
+}
+
+/* Generous Invisible Touch Target Area for Dash */
+.touch-zone-dash::before {
+  content: '';
+  position: absolute;
+  inset: -14px -12px;
+  pointer-events: auto;
 }
 
 .touch-zone-dash.ready {
   border-color: var(--accent-cyan);
-  box-shadow: var(--glow-cyan);
-  animation: dashReadyPulse 1.8s infinite ease-in-out;
+  box-shadow: 0 0 8px rgba(0, 245, 212, 0.35);
+  animation: dashReadyPulse 2s infinite ease-in-out;
 }
 
 .touch-zone-dash.cooldown {
-  opacity: 0.5;
-  border-color: rgba(255, 255, 255, 0.2);
+  opacity: 0.3;
+  border-color: rgba(255, 255, 255, 0.18);
   color: var(--text-muted);
 }
 
 .touch-zone-dash.active, .touch-zone-dash:active {
-  transform: scale(0.93);
+  opacity: 0.95;
+  transform: scale(0.94);
   background: rgba(0, 245, 212, 0.35);
-  box-shadow: 0 0 25px rgba(0, 245, 212, 0.8);
+  box-shadow: 0 0 20px rgba(0, 245, 212, 0.7);
+  color: #ffffff;
 }
 
 @keyframes dashReadyPulse {
-  0%, 100% { box-shadow: 0 0 10px rgba(0, 245, 212, 0.4); }
-  50% { box-shadow: 0 0 22px rgba(0, 245, 212, 0.75); }
+  0%, 100% { box-shadow: 0 0 6px rgba(0, 245, 212, 0.3); }
+  50% { box-shadow: 0 0 16px rgba(0, 245, 212, 0.65); }
 }
 
 .dash-cooldown-ring {
   position: relative;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -381,21 +407,21 @@ html, body {
 }
 
 .touch-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 /* Tactile Tap Ripple */
 .touch-ripple {
   position: absolute;
-  width: 50px;
-  height: 50px;
-  margin-left: -25px;
-  margin-top: -25px;
+  width: 44px;
+  height: 44px;
+  margin-left: -22px;
+  margin-top: -22px;
   border-radius: 50%;
   border: 2px solid var(--accent-amber);
-  background: rgba(255, 159, 28, 0.3);
+  background: rgba(255, 159, 28, 0.25);
   pointer-events: none;
-  animation: rippleExpand 0.4s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  animation: rippleExpand 0.38s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
 }
 
 @keyframes rippleExpand {
@@ -1096,31 +1122,33 @@ input[type=range]::-webkit-slider-thumb {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   text-align: center;
+  max-width: 320px;
 }
 
 .rotate-icon-wrap {
   position: relative;
-  width: 80px;
-  height: 80px;
+  width: 84px;
+  height: 84px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--accent-amber);
+  margin-bottom: 4px;
 }
 
 .rotate-phone-icon {
-  animation: phoneRotateAnim 2.6s ease-in-out infinite;
-  filter: drop-shadow(0 0 12px var(--accent-amber));
+  animation: phoneRotateAnim 2.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 14px rgba(255, 159, 28, 0.7));
 }
 
 .rotate-arrow {
   position: absolute;
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 900;
   color: var(--accent-cyan);
-  animation: spinArrow 2.6s ease-in-out infinite;
+  animation: spinArrow 2.8s ease-in-out infinite;
 }
 
 @keyframes phoneRotateAnim {
@@ -1146,7 +1174,7 @@ input[type=range]::-webkit-slider-thumb {
 }
 
 .rotate-prompt-text {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 900;
   font-family: var(--font-mono);
   color: var(--accent-amber);
@@ -1154,11 +1182,91 @@ input[type=range]::-webkit-slider-thumb {
   text-shadow: var(--glow-amber);
 }
 
-.rotate-sub {
+.rotate-badge {
+  font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-cyan);
+  background: rgba(0, 245, 212, 0.12);
+  border: 1px solid rgba(0, 245, 212, 0.35);
+  padding: 4px 12px;
+  border-radius: 4px;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 8px rgba(0, 245, 212, 0.5);
+  margin-top: 2px;
+}
+
+.rotate-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+  margin-top: 6px;
+}
+
+.reason-item {
+  color: var(--text-muted);
+}
+
+/* =========================================================================
+   SAFE RESUME COUNTDOWN OVERLAY
+   ========================================================================= */
+#countdown-overlay {
+  z-index: 48;
+  background: rgba(5, 6, 8, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.countdown-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.countdown-tag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent-cyan);
+  text-shadow: 0 0 10px rgba(0, 245, 212, 0.6);
+  text-transform: uppercase;
+}
+
+.countdown-val {
+  font-size: clamp(68px, 15vw, 120px);
+  font-weight: 900;
+  font-family: var(--font-mono);
+  color: var(--accent-amber);
+  text-shadow: var(--glow-amber), 0 0 40px rgba(255, 159, 28, 0.8);
+  line-height: 1;
+  animation: countdownPulse 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.countdown-val.go {
+  color: var(--accent-cyan);
+  text-shadow: var(--glow-cyan), 0 0 40px rgba(0, 245, 212, 0.9);
+}
+
+@keyframes countdownPulse {
+  0% { transform: scale(0.6); opacity: 0; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.countdown-sub {
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
 }
 
 /* =========================================================================

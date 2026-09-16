@@ -154,6 +154,21 @@ export class InputManager {
   }
 
   /**
+   * Forcibly releases any active hold actions (e.g. Squash) when pausing or rotating.
+   */
+  releaseAllHolds() {
+    if (this.isSquashing) {
+      this.isSquashing = false;
+      this.squashPointerId = null;
+      this.emit(InputActions.SQUASH_END);
+    }
+    if (typeof document !== 'undefined') {
+      const touchSquash = document.getElementById('touch-squash-zone');
+      if (touchSquash) touchSquash.classList.remove('active');
+    }
+  }
+
+  /**
    * Initializes event listeners for keyboard, mouse, and touch zones.
    */
   init() {
