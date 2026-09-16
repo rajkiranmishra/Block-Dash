@@ -9,7 +9,7 @@ An arcade runner built with vanilla web technologies, delta-time physics, block 
 ## 🎮 Live Demo & Gameplay
 
 - **Local Dev Server**: `http://localhost:3000`
-- **Demo URL**: [https://rajkiranmishra.github.io/block-dash/](https://rajkiranmishra.github.io/block-dash/) *(Deploy via GitHub Pages)*
+- **Demo URL**: [https://rajkiranmishra.github.io/Block-Dash/](https://rajkiranmishra.github.io/Block-Dash/) *(Deploy via GitHub Pages)*
 
 ---
 
@@ -68,7 +68,7 @@ An arcade runner built with vanilla web technologies, delta-time physics, block 
 
 ## 📚 Deep-Dive Educational Guide
 
-For complete mathematical derivations, physics formulas, procedural generation algorithms, and 20+ interview/viva questions with answers, see [PROJECT_GUIDE.md](file:///Users/rajkiranmishra/Block-Dash/PROJECT_GUIDE.md).
+For complete mathematical derivations, physics formulas, procedural generation algorithms, and 20+ interview/viva questions with answers, see [PROJECT_GUIDE.md](PROJECT_GUIDE.md).
 
 ---
 
