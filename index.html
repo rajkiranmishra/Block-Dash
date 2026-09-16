@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>BLOCK DASH — One Button. One Endless Level. No Excuses.</title>
+  <meta name="description" content="A brutally fast-paced, addictive 1-button arcade runner. Avoid mathematically fair hazards, climb the global leaderboard, and get roasted upon failure.">
+  
+  <!-- Modern Game Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700;900&display=swap" rel="stylesheet">
+  
+  <!-- Arcade Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- Supabase JS Client for Leaderboard & Auth (Optional CDN fallback) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <!-- Top Floating Controls -->
+  <header id="top-controls" aria-label="Game Settings">
+    <button id="btn-toggle-sound" class="icon-btn" title="Toggle Sound (M)" aria-label="Toggle Sound">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path id="audio-icon-waves" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+      </svg>
+    </button>
+    <button id="btn-toggle-crt" class="icon-btn" title="Toggle Retro CRT Scanlines" aria-label="Toggle CRT Scanlines">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+        <line x1="8" y1="21" x2="16" y2="21"></line>
+        <line x1="12" y1="17" x2="12" y2="21"></line>
+      </svg>
+    </button>
+    <button id="btn-toggle-fullscreen" class="icon-btn" title="Fullscreen (F)" aria-label="Toggle Fullscreen">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+      </svg>
+    </button>
+  </header>
+
+  <!-- Main Application Container -->
+  <main id="app-container">
+    <div id="game-wrapper">
+      
+      <!-- HTML5 Rendering Canvas -->
+      <canvas id="game-canvas" width="960" height="540" aria-label="Block Dash Game Screen" role="img"></canvas>
+      
+      <!-- Retro CRT Scanline Layers -->
+      <div id="scanline-layer" class="scanlines"></div>
+      <div class="crt-vignette"></div>
+
+      <!-- Touch Input Zone for Mobile/Tablets -->
+      <div id="touch-control-zone" aria-hidden="true"></div>
+
+      <!-- In-Game Live HUD -->
+      <div id="game-hud" class="hidden">
+        <div class="hud-group">
+          <span class="hud-label">SCORE</span>
+          <span id="hud-score" class="hud-value">0</span>
+        </div>
+        <div class="hud-group hud-right">
+          <span class="hud-label">PERSONAL BEST</span>
+          <span id="hud-pb" class="hud-value amber">0</span>
+          <div class="speed-meter" title="Current Speed">
+            <span class="hud-label" style="font-size: 9px;">SPD</span>
+            <div class="speed-bar">
+              <div id="hud-speed-fill" class="speed-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MENU OVERLAY -->
+      <section id="menu-overlay" class="ui-overlay">
+        <h1 class="game-title">BLOCK <span>DASH</span></h1>
+        <p class="tagline">One button. One endless level. No excuses.</p>
+        
+        <div class="btn-row">
+          <button id="btn-play" class="arcade-btn primary" autofocus>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            PLAY NOW
+          </button>
+          <button id="btn-open-leaderboard" class="arcade-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+              <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+              <path d="M4 22h16"></path>
+              <path d="M10 14.66V17c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-2.34"></path>
+              <path d="M18 14.66V17c0 .55-.45 1-1 1h-2c-.55 0-1-.45-1-1v-2.34"></path>
+              <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
+            </svg>
+            LEADERBOARD
+          </button>
+        </div>
+
+        <div class="input-hint">
+          <span class="kbd kbd-desktop">SPACE</span> or <span class="kbd">TAP</span> to Jump &bull; Avoid Red Hazards
+        </div>
+      </section>
+
+      <!-- READY / COUNTDOWN OVERLAY -->
+      <section id="ready-overlay" class="ui-overlay hidden">
+        <h2 style="font-size: 32px; font-weight: 900; letter-spacing: 2px;">GET READY</h2>
+        <p class="tagline" style="margin-bottom: 12px;">Press SPACE, Click, or Tap to Jump</p>
+      </section>
+
+      <!-- PAUSE OVERLAY -->
+      <section id="pause-overlay" class="ui-overlay hidden">
+        <h2 style="font-size: 36px; font-weight: 900; letter-spacing: 2px; color: var(--accent-amber);">PAUSED</h2>
+        <div class="btn-row">
+          <button id="btn-resume" class="arcade-btn primary">RESUME</button>
+          <button id="btn-pause-restart" class="arcade-btn">RESTART</button>
+          <button id="btn-pause-menu" class="arcade-btn">MAIN MENU</button>
+        </div>
+        <div class="input-hint"><span class="kbd">ESC</span> or <span class="kbd">P</span> to Resume</div>
+      </section>
+
+      <!-- DEATH & ROAST OVERLAY -->
+      <section id="death-overlay" class="ui-overlay hidden">
+        <div class="death-banner">YOU DIED</div>
+        
+        <!-- Context-Aware Roast Box -->
+        <div class="roast-card">
+          <div id="roast-cat" class="roast-category">FIRST OBSTACLE</div>
+          <div id="roast-msg" class="roast-text">"One obstacle. ONE."</div>
+          <div id="meme-badge" class="meme-badge hidden">
+            <span>💀</span> <span id="meme-text">Kevin has killed you 4 times.</span>
+          </div>
+        </div>
+
+        <!-- Run Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-box-label">SCORE</div>
+            <div id="death-score" class="stat-box-val">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-box-label">PERSONAL BEST</div>
+            <div id="death-pb" class="stat-box-val" style="color: var(--accent-amber);">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-box-label">GLOBAL RANK</div>
+            <div id="death-rank" class="stat-box-val" style="color: var(--accent-cyan); font-size: 18px; margin-top: 5px;">#---</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button id="btn-retry" class="arcade-btn danger">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <polyline points="23 20 23 14 17 14"></polyline>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+            </svg>
+            RETRY NOW
+          </button>
+          <button id="btn-death-leaderboard" class="arcade-btn">RANKINGS</button>
+          <button id="btn-death-menu" class="arcade-btn">MENU</button>
+        </div>
+
+        <div class="input-hint">
+          <span class="kbd kbd-desktop">SPACE</span> or <span class="kbd">R</span> for Instant Retry
+        </div>
+      </section>
+
+      <!-- GLOBAL LEADERBOARD OVERLAY -->
+      <section id="leaderboard-overlay" class="ui-overlay hidden">
+        <div class="leaderboard-modal">
+          <div class="leaderboard-header">
+            <div class="leaderboard-title">GLOBAL LEADERBOARD</div>
+            <button id="btn-close-leaderboard" class="icon-btn" aria-label="Close Leaderboard">✕</button>
+          </div>
+
+          <!-- Top Players List -->
+          <div id="leaderboard-rows" class="leaderboard-list">
+            <div class="leaderboard-row" style="justify-content: center; color: var(--text-muted);">
+              Loading global rankings...
+            </div>
+          </div>
+
+          <!-- Player Name Customization -->
+          <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; text-align: left;">
+            <label class="hud-label" for="player-name-input">YOUR CALLSIGN / NAME</label>
+            <div class="name-input-group">
+              <input type="text" id="player-name-input" class="name-input" maxlength="16" placeholder="Enter CallSign..." spellcheck="false" autocomplete="off">
+              <button id="btn-save-name" class="arcade-btn" style="padding: 8px 16px; font-size: 13px;">SAVE</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Modular Scripts -->
+  <script type="module" src="js/config.js"></script>
+  <script type="module" src="js/audio.js"></script>
+  <script type="module" src="js/roast.js"></script>
+  <script type="module" src="js/leaderboard.js"></script>
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>

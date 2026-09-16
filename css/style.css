@@ -1,0 +1,582 @@
+/* ==========================================================================
+   BLOCK DASH - ARCADE STYLING & DESIGN SYSTEM
+   "One button. One endless level. No excuses."
+   ========================================================================== */
+
+/* --- Custom Properties / Design Tokens --- */
+:root {
+  --bg-primary: #0b0c10;
+  --bg-surface: #14161f;
+  --bg-card: #191c28;
+  --bg-elevated: #222638;
+  
+  --accent-amber: #ff9f1c;
+  --accent-orange: #ff5722;
+  --accent-cyan: #00f5d4;
+  --danger-crimson: #ff2a55;
+  --danger-dark: #9e0026;
+  
+  --text-primary: #f3f4f6;
+  --text-secondary: #9aa0b4;
+  --text-muted: #5e657c;
+
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+  --canvas-aspect-ratio: 16 / 9;
+  --glow-amber: 0 0 15px rgba(255, 159, 28, 0.4);
+  --glow-crimson: 0 0 18px rgba(255, 42, 85, 0.45);
+}
+
+/* --- Global Reset & Box Sizing --- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Background Subtle Grid Texture */
+body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* --- Main Game Shell Container --- */
+#app-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+  padding: 12px;
+}
+
+/* Responsive Letterboxed Canvas Wrapper */
+#game-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: min(960px, calc(100vh * 16 / 9 - 40px));
+  aspect-ratio: var(--canvas-aspect-ratio);
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+/* The Game Canvas */
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* --- CRT / Retro Arcade Scanline Effect (Toggleable) --- */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0.6;
+}
+
+.crt-vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* --- In-Game Live HUD --- */
+#game-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.hud-value {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: var(--text-primary);
+  line-height: 1;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.hud-value.amber {
+  color: var(--accent-amber);
+  text-shadow: var(--glow-amber);
+}
+
+.hud-right {
+  align-items: flex-end;
+}
+
+.speed-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.speed-bar {
+  width: 70px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.speed-fill {
+  height: 100%;
+  width: 20%;
+  background: linear-gradient(90deg, var(--accent-amber), var(--danger-crimson));
+  transition: width 0.2s ease-out;
+}
+
+/* --- UI Overlays (Menu, Ready, Death, Pause, Leaderboard) --- */
+.ui-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(11, 12, 16, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 20;
+  opacity: 1;
+  transition: opacity 0.15s ease-in-out;
+  padding: 24px;
+  text-align: center;
+}
+
+.ui-overlay.hidden {
+  display: none !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Title / Brand Styling */
+.game-title {
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: 900;
+  letter-spacing: -2px;
+  text-transform: uppercase;
+  line-height: 0.95;
+  margin-bottom: 6px;
+}
+
+.game-title span {
+  color: var(--accent-amber);
+  text-shadow: var(--glow-amber);
+}
+
+.tagline {
+  font-size: 14px;
+  font-family: var(--font-mono);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+}
+
+/* Arcade Buttons */
+.arcade-btn {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 14px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.arcade-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
+  transform: translateY(-2px);
+  box-shadow: var(--glow-amber), 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
+.arcade-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.arcade-btn.primary {
+  background: var(--accent-amber);
+  color: #0b0c10;
+  border-color: var(--accent-amber);
+  box-shadow: var(--glow-amber), 0 4px 16px rgba(255, 159, 28, 0.3);
+}
+
+.arcade-btn.primary:hover {
+  background: #ffb03b;
+  color: #000;
+  transform: translateY(-2px);
+  box-shadow: 0 0 25px rgba(255, 159, 28, 0.7);
+}
+
+.arcade-btn.danger {
+  background: var(--danger-crimson);
+  color: #fff;
+  border-color: var(--danger-crimson);
+  box-shadow: var(--glow-crimson);
+}
+
+.arcade-btn.danger:hover {
+  background: #ff456a;
+  transform: translateY(-2px);
+  box-shadow: 0 0 28px rgba(255, 42, 85, 0.75);
+}
+
+.btn-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Input Hints */
+.input-hint {
+  margin-top: 20px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 3px 8px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* --- Death / Roast Card System --- */
+.death-banner {
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 900;
+  color: var(--danger-crimson);
+  text-transform: uppercase;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+  text-shadow: var(--glow-crimson);
+}
+
+.roast-card {
+  background: var(--bg-card);
+  border-left: 4px solid var(--danger-crimson);
+  padding: 16px 20px;
+  border-radius: 0 8px 8px 0;
+  max-width: 520px;
+  margin: 12px 0 18px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  text-align: left;
+  animation: roastSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes roastSlideIn {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.roast-category {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--danger-crimson);
+  margin-bottom: 4px;
+}
+
+.roast-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.meme-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: rgba(255, 42, 85, 0.15);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: #ff8ca3;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  max-width: 480px;
+  width: 100%;
+  margin: 10px 0 16px 0;
+}
+
+.stat-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px 12px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.stat-box-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.stat-box-val {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+/* --- Global Leaderboard Modal --- */
+.leaderboard-modal {
+  width: 100%;
+  max-width: 560px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+}
+
+.leaderboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+}
+
+.leaderboard-title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 16px;
+  max-height: 280px;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: background 0.1s ease;
+}
+
+.leaderboard-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.leaderboard-row.current-player {
+  background: rgba(255, 159, 28, 0.15);
+  border: 1px solid rgba(255, 159, 28, 0.5);
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+
+.rank-col {
+  width: 38px;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.rank-col.gold { color: #ffd166; }
+.rank-col.silver { color: #e0e1dd; }
+.rank-col.bronze { color: #cd7f32; }
+
+.name-col {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 10px;
+}
+
+.score-col {
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.name-input-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.name-input {
+  flex: 1;
+  background: var(--bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  outline: none;
+}
+
+.name-input:focus {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 0 1px var(--accent-amber);
+}
+
+/* --- Floating Control Bar (Sound, Fullscreen, CRT) --- */
+#top-controls {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 30;
+}
+
+.icon-btn {
+  background: rgba(19, 21, 30, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.icon-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--accent-amber);
+}
+
+/* --- Mobile Touch Zones --- */
+#touch-control-zone {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  cursor: pointer;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  #touch-control-zone {
+    display: block;
+  }
+  .input-hint .kbd-desktop {
+    display: none;
+  }
+}
