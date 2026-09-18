@@ -681,8 +681,9 @@ class GameEngine {
     const normalW = CONFIG.PLAYER.WIDTH;
     const testY = this.groundY - normalH;
     const testX = this.player.x;
+    const obstacleList = this.state === GameState.TUTORIAL ? this.tutorial.trainingObstacles : this.obstacles;
 
-    for (const obs of this.obstacles) {
+    for (const obs of obstacleList) {
       if (
         testX < obs.x + obs.w &&
         testX + normalW > obs.x &&
@@ -2341,7 +2342,9 @@ class GameEngine {
 
     // Safe unsquash
     if (this.player.wantsToUnsquash) {
-      this.performSafeUnsquash();
+      if (!this.hasOverheadObstacle()) {
+        this.performSafeUnsquash();
+      }
     }
 
     // Gravity & Grounding

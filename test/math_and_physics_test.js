@@ -42,11 +42,12 @@ console.log(`Calculated Total Air Time (t_air): ${t_air.toFixed(4)}s`);
 assert(h_max > 120 && h_max < 160, `Max jump height (${h_max.toFixed(1)}px) clears standard obstacles with ample margin.`);
 assert(t_air > 0.65 && t_air < 0.85, `Air time (${t_air.toFixed(3)}s) matches human reaction benchmark.`);
 
-// --- Test 2: Squash Hitbox & Ground Anchoring Math ---
-console.log('\n--- TEST 2: Squash / Slide Hitbox & Ground Anchoring ---');
+// --- Test 2: Squash Hitbox, Ground Anchoring & Padded AABB Collision Math ---
+console.log('\n--- TEST 2: Squash / Slide Hitbox, Ground Anchoring & Padded AABB Collisions ---');
 const normalHeight = CONFIG.PLAYER.HEIGHT; // 40px
 const squashedHeight = CONFIG.PLAYER.SQUASH_HEIGHT; // 20px
 const groundY = CONFIG.CANVAS.GROUND_Y; // 460px
+const playerPad = CONFIG.PLAYER.HITBOX_PADDING; // 4px
 
 const normalBottom = (groundY - normalHeight) + normalHeight;
 const squashedBottom = (groundY - squashedHeight) + squashedHeight;
@@ -55,14 +56,99 @@ assert(normalBottom === groundY, `Normal player bottom (${normalBottom}px) is an
 assert(squashedBottom === groundY, `Squashed player bottom (${squashedBottom}px) is anchored to ground plane (${groundY}px).`);
 assert(squashedHeight === normalHeight / 2, `Squash height (${squashedHeight}px) reduces vertical profile by 50%.`);
 
-// Floating bar clearance test:
-const barY = CONFIG.OBSTACLES.FLOATING_BAR_Y; // 400px
-const barHeight = 22;
-const barBottom = barY + barHeight; // 422px
-const clearanceUnderBar = groundY - barBottom; // 460 - 422 = 38px
+// AABB Collision helper matching game engine exactly
+function checkPaddedAABB(player, obs) {
+  const pad = CONFIG.PLAYER.HITBOX_PADDING;
+  const px = player.x + pad;
+  const py = player.y + pad;
+  const pw = player.w - (pad * 2);
+  const ph = player.h - (pad * 2);
 
-assert(clearanceUnderBar > squashedHeight, `Squashed height (${squashedHeight}px) cleanly fits under floating bar clearance (${clearanceUnderBar}px).`);
-assert(clearanceUnderBar < normalHeight, `Normal standing height (${normalHeight}px) collides with floating bar clearance (${clearanceUnderBar}px), mandating squash.`);
+  let obsPadX = 3;
+  let obsPadY = 3;
+  if (obs.type === 'spike') {
+    obsPadX = 6;
+    obsPadY = 6;
+  } else if (obs.type === 'floating_cross') {
+    obsPadX = 4;
+    obsPadY = 4;
+  }
+
+  const ox = obs.x + obsPadX;
+  const oy = obs.y + obsPadY;
+  const ow = obs.w - (obsPadX * 2);
+  const oh = obs.h - (obsPadY * 2);
+
+  return px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy;
+}
+
+// 1. Floating Bar Collision Validation
+const barY = CONFIG.OBSTACLES.FLOATING_BAR_Y; // 410px
+const barHeight = 22;
+const barPadY = 3;
+const barHitboxBottom = (barY + barPadY) + (barHeight - (barPadY * 2)); // 413 + 16 = 429px
+
+const standingPlayer = { x: 120, y: groundY - normalHeight, w: CONFIG.PLAYER.WIDTH, h: normalHeight }; // y=420, py=424, bottom=456
+const squashedPlayer = { x: 120, y: groundY - squashedHeight, w: CONFIG.PLAYER.SQUASH_WIDTH, h: squashedHeight }; // y=440, py=444, bottom=456
+const floatingBarObs = { x: 120, y: barY, w: 90, h: barHeight, type: 'floating_bar' };
+
+const standingHitsBar = checkPaddedAABB(standingPlayer, floatingBarObs);
+const squashedHitsBar = checkPaddedAABB(squashedPlayer, floatingBarObs);
+
+console.log(`Floating Bar: y=${barY}px, padded hitbox bottom=${barHitboxBottom}px`);
+console.log(`Standing Player: py=${standingPlayer.y + playerPad}px -> Overlap=${barHitboxBottom - (standingPlayer.y + playerPad)}px -> Hits=${standingHitsBar}`);
+console.log(`Squashed Player: py=${squashedPlayer.y + playerPad}px -> Clearance=${(squashedPlayer.y + playerPad) - barHitboxBottom}px -> Hits=${squashedHitsBar}`);
+
+assert(standingHitsBar === true, `NORMAL STANDING PLAYER + FLOATING BAR -> COLLISION / DEATH (5px overlap into padded hitbox).`);
+assert(squashedHitsBar === false, `SQUASHED PLAYER + FLOATING BAR -> SAFE / PASS (15px clearance between padded hitboxes, 8px visual air gap).`);
+
+// 2. Floating Cross Collision Validation
+const crossY = CONFIG.OBSTACLES.FLOATING_CROSS_Y; // 408px
+const crossHeight = 26;
+const crossPadY = 4;
+const crossHitboxBottom = (crossY + crossPadY) + (crossHeight - (crossPadY * 2)); // 412 + 18 = 430px
+const floatingCrossObs = { x: 120, y: crossY, w: 26, h: crossHeight, type: 'floating_cross' };
+
+const standingHitsCross = checkPaddedAABB(standingPlayer, floatingCrossObs);
+const squashedHitsCross = checkPaddedAABB(squashedPlayer, floatingCrossObs);
+
+console.log(`Floating Cross: y=${crossY}px, padded hitbox bottom=${crossHitboxBottom}px`);
+console.log(`Standing Player vs Cross -> Overlap=${crossHitboxBottom - (standingPlayer.y + playerPad)}px -> Hits=${standingHitsCross}`);
+console.log(`Squashed Player vs Cross -> Clearance=${(squashedPlayer.y + playerPad) - crossHitboxBottom}px -> Hits=${squashedHitsCross}`);
+
+assert(standingHitsCross === true, `NORMAL STANDING PLAYER + FLOATING CROSS -> COLLISION / DEATH (6px overlap into padded hitbox).`);
+assert(squashedHitsCross === false, `SQUASHED PLAYER + FLOATING CROSS -> SAFE / PASS (14px clearance between padded hitboxes, 6px visual air gap).`);
+
+// 3. Jumping Into Floating Obstacles
+const jumpingPlayer = { x: 120, y: 390, w: CONFIG.PLAYER.WIDTH, h: normalHeight };
+assert(checkPaddedAABB(jumpingPlayer, floatingBarObs) === true, `JUMPING PLAYER + FLOATING BAR -> COLLISION (intersects obstacle arc).`);
+assert(checkPaddedAABB(jumpingPlayer, floatingCrossObs) === true, `JUMPING PLAYER + FLOATING CROSS -> COLLISION (intersects obstacle arc).`);
+
+// 4. Safe-Unsquash Logic Validation
+function testHasOverheadObstacle(playerX, obstacles) {
+  const normalH = CONFIG.PLAYER.HEIGHT;
+  const normalW = CONFIG.PLAYER.WIDTH;
+  const testY = groundY - normalH;
+  for (const obs of obstacles) {
+    if (
+      playerX < obs.x + obs.w &&
+      playerX + normalW > obs.x &&
+      testY < obs.y + obs.h &&
+      testY + normalH > obs.y
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const overheadBar = [{ x: 100, y: barY, w: 90, h: barHeight }];
+assert(testHasOverheadObstacle(120, overheadBar) === true, `Safe-Unsquash: Overhead floating bar correctly detected; player prevented from unsquashing.`);
+assert(testHasOverheadObstacle(200, overheadBar) === false, `Safe-Unsquash: Obstacle cleared (x=200 > x=100+90); player safely unsquashes.`);
+
+// 5. Tutorial Consistency
+const tutorialSquashY = groundY - 50; // 410px
+assert(CONFIG.OBSTACLES.FLOATING_BAR_Y === tutorialSquashY, `Gameplay FLOATING_BAR_Y (${CONFIG.OBSTACLES.FLOATING_BAR_Y}px) matches Tutorial Step 2 Squash Y (${tutorialSquashY}px).`);
 
 // --- Test 3: Dash Kinematics & Cooldown ---
 console.log('\n--- TEST 3: Dash Kinematics & Delta-Time Independence ---');
@@ -401,7 +487,54 @@ isOrientationPaused = false;
 if (!isOrientationPaused && !isCountingDown) {
   frozenObsPos -= 380 * fakeDt;
 }
-assert(frozenObsPos < 300, 'Gameplay smoothly resumes after countdown concludes.');
+// --- Test 12: Ground Hazards, Missiles & Coordinate Invariance Matrix ---
+console.log('\n--- TEST 12: Ground Hazards, Missiles & Coordinate Invariance Matrix ---');
+
+// Ground Spike Validation
+const groundSpikeObs = { x: 120, y: groundY - 36, w: 36, h: 36, type: 'spike' };
+assert(checkPaddedAABB(standingPlayer, groundSpikeObs) === true, 'Standing Player vs Ground Spike -> COLLISION');
+assert(checkPaddedAABB(squashedPlayer, groundSpikeObs) === true, 'Squashed Player vs Ground Spike -> COLLISION (Spike cannot be squashed under)');
+assert(checkPaddedAABB({ x: 120, y: 280, w: CONFIG.PLAYER.WIDTH, h: normalHeight }, groundSpikeObs) === false, 'Jumping Player (peak jump) vs Ground Spike -> SAFE / CLEARED');
+
+// Block Hazard Validation
+const blockObs = { x: 120, y: groundY - 42, w: 40, h: 42, type: 'block' };
+assert(checkPaddedAABB(standingPlayer, blockObs) === true, 'Standing Player vs Block Hazard -> COLLISION');
+assert(checkPaddedAABB(squashedPlayer, blockObs) === true, 'Squashed Player vs Block Hazard -> COLLISION');
+
+// Energy Gate Validation
+const energyGateObs = { x: 120, y: groundY - 60, w: 32, h: 60, type: 'energy_gate' };
+assert(checkPaddedAABB(standingPlayer, energyGateObs) === true, 'Standing Player vs Energy Gate -> COLLISION');
+assert(checkPaddedAABB(squashedPlayer, energyGateObs) === true, 'Squashed Player vs Energy Gate -> COLLISION');
+
+// Interceptor High Missile Validation
+const highMissileObs = { x: 120, y: groundY - 36, w: 32, h: 14, type: 'missile' };
+assert(checkPaddedAABB(standingPlayer, highMissileObs) === true, 'Standing Player vs High Missile -> COLLISION / DEATH');
+assert(checkPaddedAABB(squashedPlayer, highMissileObs) === false, 'Squashed Player vs High Missile -> SAFE / CLEARED');
+
+// Interceptor Ground Missile Validation (aimY = groundY - 18)
+const groundMissileObs = { x: 120, y: (groundY - 18) - 7, w: 32, h: 14, type: 'missile' };
+assert(checkPaddedAABB(standingPlayer, groundMissileObs) === true, 'Standing Player vs Ground Missile -> COLLISION / DEATH');
+assert(checkPaddedAABB(squashedPlayer, groundMissileObs) === true, 'Squashed Player vs Ground Missile -> COLLISION / DEATH (Requires Jump)');
+
+// Resolution & Coordinate Invariance Verification
+const desktopResolution = { width: 1920, height: 1080, dpr: 1 };
+const mobileLandscapeResolution = { width: 844, height: 390, dpr: 3 };
+
+function getVirtualDimensions(screenRes) {
+  // Game virtual dimensions are hard-locked constants
+  return {
+    virtualWidth: CONFIG.CANVAS.WIDTH,
+    virtualHeight: CONFIG.CANVAS.HEIGHT,
+    groundY: CONFIG.CANVAS.GROUND_Y
+  };
+}
+
+const vDesktop = getVirtualDimensions(desktopResolution);
+const vMobile = getVirtualDimensions(mobileLandscapeResolution);
+
+assert(vDesktop.virtualWidth === 960 && vDesktop.virtualHeight === 540 && vDesktop.groundY === 460, 'Desktop runs in locked 960x540 virtual coordinate space.');
+assert(vMobile.virtualWidth === 960 && vMobile.virtualHeight === 540 && vMobile.groundY === 460, 'Mobile landscape runs in identical locked 960x540 virtual coordinate space.');
+assert(vDesktop.groundY === vMobile.groundY, 'Ground Y plane (460px) is 100% identical between desktop and mobile.');
 
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);

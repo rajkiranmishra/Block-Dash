@@ -51,8 +51,8 @@ export const CONFIG = {
     SAFETY_BUFFER: 65,       // Extra reaction distance buffer in px beyond minimum jump arc
     BASE_WIDTH: 40,
     BASE_HEIGHT: 40,
-    FLOATING_BAR_Y: 400,     // Y coordinate for floating bars
-    FLOATING_CROSS_Y: 395,   // Y coordinate for floating hazard crosses
+    FLOATING_BAR_Y: 410,     // Y coordinate for floating bars (mandates squash under 40px standing player)
+    FLOATING_CROSS_Y: 408,   // Y coordinate for floating hazard crosses (mandates squash)
   },
 
   // --- Space Interceptor & Event Director Parameters ---

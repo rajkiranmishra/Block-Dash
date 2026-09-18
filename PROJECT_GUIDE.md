@@ -179,7 +179,7 @@ $$\Delta x = \text{Effective Speed} \cdot \Delta t$$
 
 ### Obstacle Families
 1. **Ground Spikes & Blocks**: Require **JUMP**.
-2. **Floating Laser Bars & Crosses**: Suspended at $y=400$ ($38\text{px}$ ground clearance). Requires **SQUASH** ($h=20\text{px}$).
+2. **Floating Laser Bars & Crosses**: Suspended at $y=410$ / $y=408$ ($28\text{px}$ ground clearance). Requires **SQUASH** ($h=20\text{px}$).
 3. **Energy Gates & Wide Pits**: Require **DASH** or **JUMP + DASH**.
 
 ### Progressive Difficulty Pacing
