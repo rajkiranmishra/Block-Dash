@@ -87,6 +87,26 @@ export const CONFIG = {
     TRAIL_MAX_LENGTH: 10,        // Length of motion blur trail behind player
   },
 
+  // --- Cinematic Cause-Specific Death Parameters ---
+  DEATH: {
+    DURATION_PHYSICAL: 0.95,     // Duration of physical impact crack & shatter (seconds)
+    DURATION_ENERGY: 0.90,       // Duration of electric energy disintegration (seconds)
+    DURATION_MISSILE: 1.05,      // Duration of missile explosion & smoke (seconds)
+    HITSTOP_PHYSICAL: 0.07,      // Hit-stop freeze duration on physical impact (seconds)
+    HITSTOP_BLOCK: 0.09,         // Slightly heavier hit-stop for solid block (seconds)
+    HITSTOP_ENERGY: 0.04,        // Hit-stop duration for energy gate (seconds)
+    HITSTOP_MISSILE: 0.03,       // Rapid hit-stop before missile blast (seconds)
+    FRAGMENT_COUNT_DESKTOP: 10,  // Number of physical block fragments on desktop
+    FRAGMENT_COUNT_MOBILE: 7,    // Number of physical block fragments on mobile
+    PARTICLE_COUNT_DESKTOP: 24,  // Death impact spark particles on desktop
+    PARTICLE_COUNT_MOBILE: 12,   // Death impact spark particles on mobile
+    SHAKE_INTENSITY_SPIKE: 10,   // Screen shake intensity for spike impact
+    SHAKE_INTENSITY_BLOCK: 14,   // Screen shake intensity for solid block impact
+    SHAKE_INTENSITY_FLOATING: 11,// Screen shake intensity for floating hazard
+    SHAKE_INTENSITY_ENERGY: 12,  // Screen shake intensity for energy gate
+    SHAKE_INTENSITY_MISSILE: 18, // Screen shake intensity for missile explosion
+  },
+
   // --- Audio Parameters ---
   AUDIO: {
     MASTER_VOLUME: 0.7,

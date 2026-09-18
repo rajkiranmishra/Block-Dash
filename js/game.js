@@ -30,6 +30,7 @@ export const GameState = Object.freeze({
   MENU: 'MENU',
   TUTORIAL: 'TUTORIAL',
   PLAYING: 'PLAYING',
+  DYING: 'DYING',
   PAUSED: 'PAUSED',
   DEAD: 'DEAD',
 });
@@ -111,6 +112,37 @@ class GameEngine {
     this.lastKillerType = 'single-spike';
     this.lastMissileVariant = null;
     this.lastMilestone = 0;
+    this.finalScore = 0;
+    this.finalSurvivalTime = 0;
+
+    // Cinematic Cause-Specific Death Animation State
+    this.deathAnimation = {
+      active: false,
+      timer: 0,
+      duration: CONFIG.DEATH ? CONFIG.DEATH.DURATION_PHYSICAL : 0.95,
+      hitStopTimer: 0,
+      cause: 'spike',
+      killerType: 'single-spike',
+      obstacleType: 'spike',
+      missileVariant: null,
+      playerX: 0,
+      playerY: 0,
+      playerW: 40,
+      playerH: 40,
+      impactX: 0,
+      impactY: 0,
+      cracks: [],
+      fragments: [],
+      shockwaves: [],
+      energySlices: [],
+      smokeParticles: [],
+      sparks: [],
+      flashAlpha: 0,
+      cameraZoom: 1.0,
+      playerVisible: true,
+      shattered: false,
+      hasSubmittedScore: false,
+    };
 
     // --- Interactive 3D Holographic Training Simulation State ---
     this.tutorial = {
@@ -468,6 +500,10 @@ class GameEngine {
         this.dom.hud.classList.remove('hidden');
         break;
 
+      case GameState.DYING:
+        this.dom.hud.classList.remove('hidden');
+        break;
+
       case GameState.PAUSED:
         this.dom.hud.classList.remove('hidden');
         this.dom.pauseOverlay.classList.remove('hidden');
@@ -531,8 +567,39 @@ class GameEngine {
     this.currentSpeed = CONFIG.SPEED.INITIAL;
     this.lastMilestone = 0;
     this.lastMissileVariant = null;
+    this.finalScore = 0;
+    this.finalSurvivalTime = 0;
     this.shakeTime = 0;
     this.shakeDuration = 0;
+
+    // Reset Death Animation State
+    this.deathAnimation = {
+      active: false,
+      timer: 0,
+      duration: CONFIG.DEATH ? CONFIG.DEATH.DURATION_PHYSICAL : 0.95,
+      hitStopTimer: 0,
+      cause: 'spike',
+      killerType: 'single-spike',
+      obstacleType: 'spike',
+      missileVariant: null,
+      playerX: 0,
+      playerY: 0,
+      playerW: 40,
+      playerH: 40,
+      impactX: 0,
+      impactY: 0,
+      cracks: [],
+      fragments: [],
+      shockwaves: [],
+      energySlices: [],
+      smokeParticles: [],
+      sparks: [],
+      flashAlpha: 0,
+      cameraZoom: 1.0,
+      playerVisible: true,
+      shattered: false,
+      hasSubmittedScore: false,
+    };
 
     this.dom.hudScore.textContent = '0';
     this.dom.hudPb.textContent = storage.getBestScore();
@@ -734,37 +801,644 @@ class GameEngine {
   }
 
   addScreenShake(intensity, duration) {
-    const scale = (this.inputManager && this.inputManager.isMobile()) ? 0.65 : 1.0;
+    const isMobile = this.inputManager && this.inputManager.isMobile();
+    const isReduced = typeof window !== 'undefined' && 
+      window.matchMedia && 
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (isReduced) {
+      this.shakeIntensity = Math.min(2, intensity * 0.2);
+      this.shakeDuration = Math.min(0.15, duration * 0.5);
+      this.shakeTime = this.shakeDuration;
+      return;
+    }
+
+    const scale = isMobile ? 0.7 : 1.0;
     this.shakeIntensity = intensity * scale;
     this.shakeDuration = duration;
     this.shakeTime = duration;
   }
 
-  async handleDeath() {
-    audio.playDeath();
-    this.addScreenShake(CONFIG.VISUALS.SHAKE_INTENSITY_DEATH, CONFIG.VISUALS.SHAKE_DURATION_DEATH);
+  /**
+   * ============================================================================
+   * CINEMATIC CAUSE-SPECIFIC DEATH SYSTEM & DYING FSM
+   * ============================================================================
+   */
 
-    for (let i = 0; i < CONFIG.VISUALS.PARTICLE_COUNT_DEATH; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 320 + 80;
-      this.particles.push({
-        x: this.player.x + this.player.w / 2,
-        y: this.player.y + this.player.h / 2,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 60,
-        size: Math.random() * 8 + 4,
-        color: Math.random() > 0.4 ? CONFIG.COLORS.PLAYER : CONFIG.COLORS.HAZARD_SPIKE,
-        alpha: 1,
-        rotation: Math.random() * 360,
-        rotSpeed: (Math.random() - 0.5) * 720,
-        life: 0.8,
-        maxLife: 0.8
+  /**
+   * Triggers the dedicated DYING intermediate state with captured context
+   */
+  triggerDeath(context = {}) {
+    if (this.state !== GameState.PLAYING && this.state !== GameState.TUTORIAL) return;
+
+    // Freeze telemetry & performance metrics at moment of fatal impact
+    this.finalScore = Math.floor(this.score);
+    this.finalSurvivalTime = this.survivalTime;
+
+    const isMobile = this.inputManager && this.inputManager.isMobile();
+    const cause = context.cause || 'spike';
+    const killerType = context.killerType || 'single-spike';
+    const obstacleType = context.obstacleType || 'spike';
+    const missileVariant = context.missileVariant || null;
+
+    this.lastKillerType = killerType;
+    this.lastMissileVariant = missileVariant;
+
+    const px = this.player.x;
+    const py = this.player.y;
+    const pw = this.player.w;
+    const ph = this.player.h;
+    const impactX = context.impactX !== undefined ? context.impactX : (px + pw * 0.5);
+    const impactY = context.impactY !== undefined ? context.impactY : (py + ph * 0.5);
+
+    // Duration and Hit-Stop timing per death cause
+    let duration = CONFIG.DEATH.DURATION_PHYSICAL;
+    let hitStop = CONFIG.DEATH.HITSTOP_PHYSICAL;
+    let shakeIntensity = CONFIG.DEATH.SHAKE_INTENSITY_SPIKE;
+
+    if (cause === 'block') {
+      duration = CONFIG.DEATH.DURATION_PHYSICAL;
+      hitStop = CONFIG.DEATH.HITSTOP_BLOCK;
+      shakeIntensity = CONFIG.DEATH.SHAKE_INTENSITY_BLOCK;
+    } else if (cause === 'floating') {
+      duration = CONFIG.DEATH.DURATION_PHYSICAL;
+      hitStop = CONFIG.DEATH.HITSTOP_PHYSICAL;
+      shakeIntensity = CONFIG.DEATH.SHAKE_INTENSITY_FLOATING;
+    } else if (cause === 'energy') {
+      duration = CONFIG.DEATH.DURATION_ENERGY;
+      hitStop = CONFIG.DEATH.HITSTOP_ENERGY;
+      shakeIntensity = CONFIG.DEATH.SHAKE_INTENSITY_ENERGY;
+    } else if (cause === 'missile') {
+      duration = CONFIG.DEATH.DURATION_MISSILE;
+      hitStop = CONFIG.DEATH.HITSTOP_MISSILE;
+      shakeIntensity = CONFIG.DEATH.SHAKE_INTENSITY_MISSILE;
+    }
+
+    this.addScreenShake(shakeIntensity, 0.45);
+
+    // Cause-Specific Audio Synthesis
+    if (cause === 'energy') {
+      audio.playEnergyDeath();
+    } else if (cause === 'missile') {
+      audio.playMissileDirectHit();
+    } else {
+      audio.playPhysicalImpactCrack(cause === 'block');
+    }
+
+    // Initialize Death Animation Container
+    this.deathAnimation = {
+      active: true,
+      timer: 0,
+      duration,
+      hitStopTimer: hitStop,
+      cause,
+      killerType,
+      obstacleType,
+      missileVariant,
+      playerX: px,
+      playerY: py,
+      playerW: pw,
+      playerH: ph,
+      impactX,
+      impactY,
+      cracks: [],
+      fragments: [],
+      shockwaves: [],
+      energySlices: [],
+      smokeParticles: [],
+      sparks: [],
+      flashAlpha: cause === 'missile' ? 0.9 : (cause === 'energy' ? 0.75 : 0.45),
+      cameraZoom: 1.0,
+      playerVisible: true,
+      shattered: false,
+      hasSubmittedScore: false,
+    };
+
+    // Cause-Specific Visual Structure Initialization
+    if (cause === 'missile') {
+      this.deathAnimation.shattered = true;
+      this.deathAnimation.playerVisible = false;
+      this.setupMissileDeathVisuals(px, py, pw, ph, impactX, impactY, isMobile);
+    } else if (cause === 'energy') {
+      this.setupEnergyDeathVisuals(px, py, pw, ph, isMobile);
+    } else {
+      this.setupPhysicalCrackVisuals(px, py, pw, ph, impactX, impactY, cause, isMobile);
+    }
+
+    this.setState(GameState.DYING);
+  }
+
+  /**
+   * Procedural Crack Paths originating near impact location
+   */
+  setupPhysicalCrackVisuals(px, py, pw, ph, impactX, impactY, cause, isMobile) {
+    const crackCount = isMobile ? 4 : 6;
+    const cracks = [];
+
+    const relImpactX = Math.max(2, Math.min(pw - 2, impactX - px));
+    const relImpactY = Math.max(2, Math.min(ph - 2, impactY - py));
+
+    for (let i = 0; i < crackCount; i++) {
+      const baseAngle = (i / crackCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const length = Math.random() * 24 + 16;
+      
+      const segments = [];
+      let curX = relImpactX;
+      let curY = relImpactY;
+      segments.push({ x: curX, y: curY });
+
+      const numSegs = Math.floor(Math.random() * 3) + 2;
+      for (let s = 0; s < numSegs; s++) {
+        const segDist = length / numSegs;
+        const angleVar = baseAngle + (Math.random() - 0.5) * 0.7;
+        curX += Math.cos(angleVar) * segDist;
+        curY += Math.sin(angleVar) * segDist;
+        curX = Math.max(0, Math.min(pw, curX));
+        curY = Math.max(0, Math.min(ph, curY));
+        segments.push({ x: curX, y: curY });
+      }
+
+      cracks.push({
+        segments,
+        progress: 0,
       });
     }
 
-    const finalScore = Math.floor(this.score);
+    this.deathAnimation.cracks = cracks;
+
+    // Initial Impact Sparks
+    const sparkCount = isMobile ? 8 : 14;
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 160 + 40;
+      this.deathAnimation.sparks.push({
+        x: impactX,
+        y: impactY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - (cause === 'spike' ? 60 : 20),
+        size: Math.random() * 3.5 + 1.5,
+        color: cause === 'spike' ? '#ff2a55' : '#ff9f1c',
+        alpha: 1,
+        life: 0.32,
+        maxLife: 0.32,
+      });
+    }
+  }
+
+  /**
+   * Fractures player cube into physical polygon/rect fragments with gravity and rotation
+   */
+  shatterPhysicalPlayer(isMobile) {
+    const anim = this.deathAnimation;
+    if (anim.shattered) return;
+    anim.shattered = true;
+    anim.playerVisible = false;
+
+    const numFrags = isMobile ? CONFIG.DEATH.FRAGMENT_COUNT_MOBILE : CONFIG.DEATH.FRAGMENT_COUNT_DESKTOP;
+    const px = anim.playerX;
+    const py = anim.playerY;
+    const pw = anim.playerW;
+    const ph = anim.playerH;
+
+    const cols = isMobile ? 3 : 4;
+    const rows = isMobile ? 2 : 3;
+    const cellW = pw / cols;
+    const cellH = ph / rows;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (anim.fragments.length >= numFrags) break;
+        const fx = px + c * cellW + cellW / 2;
+        const fy = py + r * cellH + cellH / 2;
+
+        const relX = fx - (px + pw / 2);
+        const relY = fy - (py + ph / 2);
+        const dist = Math.hypot(relX, relY) || 1;
+
+        let vx = (relX / dist) * (Math.random() * 160 + 90) + (Math.random() - 0.5) * 80;
+        let vy = (relY / dist) * (Math.random() * 150 + 60) - 100;
+
+        // Cause-Specific Impulse Biases
+        if (anim.cause === 'spike') {
+          vy -= (Math.random() * 150 + 90); // Upward blast from spike
+          vx += (Math.random() - 0.7) * 90;
+        } else if (anim.cause === 'block') {
+          vx -= (Math.random() * 180 + 130); // Hard rebound backward from solid wall
+          vy += (Math.random() - 0.5) * 90;
+        } else if (anim.cause === 'floating') {
+          vy += (Math.random() * 90 + 40); // Downward strike momentum from overhead beam
+          vx -= (Math.random() * 110 + 40);
+        }
+
+        const sizeW = cellW * (0.8 + Math.random() * 0.4);
+        const sizeH = cellH * (0.8 + Math.random() * 0.4);
+
+        anim.fragments.push({
+          x: fx,
+          y: fy,
+          w: sizeW,
+          h: sizeH,
+          vx,
+          vy,
+          rotation: (Math.random() - 0.5) * Math.PI,
+          rotSpeed: (Math.random() - 0.5) * 14,
+          color: (r === 0 && c === cols - 1) ? '#050608' : CONFIG.COLORS.PLAYER,
+          alpha: 1,
+          gravity: 1200,
+        });
+      }
+    }
+
+    // Shatter Spark Burst
+    const debrisCount = isMobile ? 12 : 22;
+    for (let i = 0; i < debrisCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 240 + 60;
+      anim.sparks.push({
+        x: px + pw / 2 + (Math.random() - 0.5) * pw,
+        y: py + ph / 2 + (Math.random() - 0.5) * ph,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 60,
+        size: Math.random() * 4 + 2,
+        color: Math.random() > 0.35 ? CONFIG.COLORS.PLAYER : '#ffffff',
+        alpha: 1,
+        life: 0.5,
+        maxLife: 0.5,
+      });
+    }
+  }
+
+  /**
+   * Energy Gate Death: Electric scanlines, glitch slice offsets, and pixel disintegration
+   */
+  setupEnergyDeathVisuals(px, py, pw, ph, isMobile) {
+    const anim = this.deathAnimation;
+    anim.playerVisible = false;
+
+    const sliceCount = isMobile ? 4 : 6;
+    const sliceH = ph / sliceCount;
+
+    for (let i = 0; i < sliceCount; i++) {
+      anim.energySlices.push({
+        x: px,
+        y: py + i * sliceH,
+        w: pw,
+        h: sliceH,
+        offsetX: (i % 2 === 0 ? 1 : -1) * (Math.random() * 10 + 4),
+        alpha: 1.0,
+        vx: (Math.random() - 0.5) * 90 - 40,
+        vy: (Math.random() - 0.5) * 50,
+        color: i % 2 === 0 ? CONFIG.COLORS.HAZARD_LASER : CONFIG.COLORS.PLAYER,
+      });
+    }
+
+    const sparkCount = isMobile ? 12 : 20;
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 240 + 60;
+      anim.sparks.push({
+        x: px + Math.random() * pw,
+        y: py + Math.random() * ph,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: Math.random() * 3 + 1.5,
+        color: Math.random() > 0.4 ? '#00f5d4' : '#ff007f',
+        alpha: 1,
+        life: 0.45,
+        maxLife: 0.45,
+      });
+    }
+  }
+
+  /**
+   * Missile Blast Death: Expanding shockwave ring, explosive shrapnel, and dark smoke
+   */
+  setupMissileDeathVisuals(px, py, pw, ph, impactX, impactY, isMobile) {
+    const anim = this.deathAnimation;
+
+    // Expanding Shockwave Rings
+    anim.shockwaves.push({
+      x: impactX,
+      y: impactY,
+      radius: 12,
+      maxRadius: isMobile ? 95 : 130,
+      lineWidth: 5,
+      alpha: 1.0,
+      color: '#ff9f1c',
+      expandSpeed: 380,
+    });
+    anim.shockwaves.push({
+      x: impactX,
+      y: impactY,
+      radius: 4,
+      maxRadius: isMobile ? 60 : 85,
+      lineWidth: 3,
+      alpha: 0.9,
+      color: '#00f5d4',
+      expandSpeed: 480,
+    });
+
+    // Explosive Shrapnel
+    const fragCount = isMobile ? 8 : 14;
+    for (let i = 0; i < fragCount; i++) {
+      const angle = (i / fragCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+      const speed = Math.random() * 320 + 120;
+      anim.fragments.push({
+        x: px + pw / 2,
+        y: py + ph / 2,
+        w: Math.random() * 9 + 5,
+        h: Math.random() * 9 + 5,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 80,
+        rotation: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 16,
+        color: Math.random() > 0.4 ? CONFIG.COLORS.PLAYER : '#ff2a55',
+        alpha: 1,
+        gravity: 1000,
+      });
+    }
+
+    // Plasma / Fire Sparks
+    const sparkCount = isMobile ? 16 : 28;
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 360 + 80;
+      anim.sparks.push({
+        x: impactX,
+        y: impactY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 50,
+        size: Math.random() * 5 + 2,
+        color: Math.random() > 0.5 ? '#ff9f1c' : (Math.random() > 0.5 ? '#ff2a55' : '#ffffff'),
+        alpha: 1,
+        life: Math.random() * 0.4 + 0.35,
+        maxLife: 0.75,
+      });
+    }
+
+    // Billowy Smoke Clouds
+    const smokeCount = isMobile ? 6 : 10;
+    for (let i = 0; i < smokeCount; i++) {
+      anim.smokeParticles.push({
+        x: impactX + (Math.random() - 0.5) * 20,
+        y: impactY + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 60,
+        vy: -Math.random() * 70 - 30,
+        size: Math.random() * 12 + 10,
+        growth: Math.random() * 20 + 15,
+        alpha: 0.8,
+        color: 'rgba(30, 32, 45,',
+        life: Math.random() * 0.45 + 0.4,
+        maxLife: 0.85,
+      });
+    }
+  }
+
+  /**
+   * Delta-Time update for Death Animation System
+   */
+  updateDeathAnimation(dt) {
+    const anim = this.deathAnimation;
+    if (!anim || !anim.active) return;
+
+    const isMobile = this.inputManager && this.inputManager.isMobile();
+
+    // Hit-Stop impact freeze
+    if (anim.hitStopTimer > 0) {
+      anim.hitStopTimer -= dt;
+      return;
+    }
+
+    anim.timer += dt;
+    const progress = Math.min(1, anim.timer / anim.duration);
+
+    // Fade flash overlay
+    if (anim.flashAlpha > 0) {
+      anim.flashAlpha = Math.max(0, anim.flashAlpha - dt * 4.0);
+    }
+
+    // Physical crack progress & shatter trigger at t = 0.22s
+    if (anim.cause !== 'missile' && anim.cause !== 'energy') {
+      for (const crack of anim.cracks) {
+        crack.progress = Math.min(1, crack.progress + dt * 5.0);
+      }
+
+      if (anim.timer >= 0.22 && !anim.shattered) {
+        this.shatterPhysicalPlayer(isMobile);
+      }
+    }
+
+    // Energy slices glitch update
+    if (anim.cause === 'energy') {
+      for (const slice of anim.energySlices) {
+        slice.offsetX = (Math.random() - 0.5) * 16 * (1 - progress);
+        slice.x += slice.vx * dt;
+        slice.y += slice.vy * dt;
+        slice.alpha = Math.max(0, 1 - progress * 1.3);
+      }
+    }
+
+    // Update fragments with gravity & rotation
+    for (let i = anim.fragments.length - 1; i >= 0; i--) {
+      const f = anim.fragments[i];
+      f.vy += f.gravity * dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.rotation += f.rotSpeed * dt;
+
+      if (progress > 0.55) {
+        f.alpha = Math.max(0, 1 - (progress - 0.55) / 0.45);
+      }
+    }
+
+    // Update shockwaves
+    for (let i = anim.shockwaves.length - 1; i >= 0; i--) {
+      const sw = anim.shockwaves[i];
+      sw.radius += sw.expandSpeed * dt;
+      sw.alpha = Math.max(0, 1 - sw.radius / sw.maxRadius);
+      sw.lineWidth = Math.max(0.5, 5 * sw.alpha);
+    }
+
+    // Update sparks
+    for (let i = anim.sparks.length - 1; i >= 0; i--) {
+      const sp = anim.sparks[i];
+      sp.x += sp.vx * dt;
+      sp.y += sp.vy * dt;
+      sp.life -= dt;
+      sp.alpha = Math.max(0, sp.life / sp.maxLife);
+      if (sp.life <= 0) anim.sparks.splice(i, 1);
+    }
+
+    // Update smoke
+    for (let i = anim.smokeParticles.length - 1; i >= 0; i--) {
+      const sm = anim.smokeParticles[i];
+      sm.x += sm.vx * dt;
+      sm.y += sm.vy * dt;
+      sm.size += sm.growth * dt;
+      sm.life -= dt;
+      sm.alpha = Math.max(0, sm.life / sm.maxLife);
+      if (sm.life <= 0) anim.smokeParticles.splice(i, 1);
+    }
+
+    // Finalize transition to DEAD state & Game Over UI
+    if (anim.timer >= anim.duration) {
+      this.setState(GameState.DEAD);
+    }
+  }
+
+  /**
+   * Renders cause-specific visual death elements
+   */
+  renderDeathAnimation() {
+    const anim = this.deathAnimation;
+    if (!anim || !anim.active) return;
+
+    this.ctx.save();
+
+    // 1. Initial Flash Overlay
+    if (anim.flashAlpha > 0) {
+      this.ctx.save();
+      const flashColor = anim.cause === 'missile' ? 'rgba(255, 159, 28,' : (anim.cause === 'energy' ? 'rgba(0, 245, 212,' : 'rgba(255, 255, 255,');
+      this.ctx.fillStyle = `${flashColor} ${anim.flashAlpha * 0.45})`;
+      this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
+      this.ctx.restore();
+    }
+
+    // 2. Render Intact Player with Procedural Cracks
+    if (anim.playerVisible && !anim.shattered) {
+      this.ctx.save();
+      this.ctx.translate(anim.playerX + anim.playerW / 2, anim.playerY + anim.playerH / 2);
+
+      // Draw Base Cube
+      this.ctx.fillStyle = CONFIG.COLORS.PLAYER;
+      this.ctx.fillRect(-anim.playerW / 2, -anim.playerH / 2, anim.playerW, anim.playerH);
+
+      // Cube Edge Stroke
+      this.ctx.strokeStyle = '#ffe49e';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.strokeRect(-anim.playerW / 2 + 1, -anim.playerH / 2 + 1, anim.playerW - 2, anim.playerH - 2);
+
+      // Draw Player Eye
+      this.ctx.fillStyle = CONFIG.COLORS.PLAYER_EYE;
+      this.ctx.fillRect(anim.playerW * 0.15, -anim.playerH * 0.25, anim.playerW * 0.2, anim.playerH * 0.45);
+
+      // Render Procedural Vector Cracks
+      const relOffsetX = -anim.playerW / 2;
+      const relOffsetY = -anim.playerH / 2;
+
+      for (const crack of anim.cracks) {
+        if (crack.segments.length < 2) continue;
+        const totalPoints = crack.segments.length;
+        const visibleCount = Math.max(2, Math.ceil(totalPoints * crack.progress));
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(relOffsetX + crack.segments[0].x, relOffsetY + crack.segments[0].y);
+        for (let s = 1; s < visibleCount; s++) {
+          this.ctx.lineTo(relOffsetX + crack.segments[s].x, relOffsetY + crack.segments[s].y);
+        }
+
+        // Crack Glow / Shadow
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2.0;
+        this.ctx.shadowColor = '#ff2a55';
+        this.ctx.shadowBlur = 4;
+        this.ctx.stroke();
+
+        // Dark Inner Hairline
+        this.ctx.shadowBlur = 0;
+        this.ctx.strokeStyle = '#14161f';
+        this.ctx.lineWidth = 1.0;
+        this.ctx.stroke();
+      }
+
+      this.ctx.restore();
+    }
+
+    // 3. Render Energy Slices (for Energy Gate)
+    if (anim.cause === 'energy' && anim.energySlices.length > 0) {
+      for (const slice of anim.energySlices) {
+        if (slice.alpha <= 0) continue;
+        this.ctx.save();
+        this.ctx.globalAlpha = slice.alpha;
+        this.ctx.fillStyle = slice.color;
+        this.ctx.fillRect(slice.x + slice.offsetX, slice.y, slice.w, slice.h);
+
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(slice.x + slice.offsetX, slice.y, slice.w, slice.h);
+        this.ctx.restore();
+      }
+    }
+
+    // 4. Render Physical / Shrapnel Fragments
+    for (const f of anim.fragments) {
+      if (f.alpha <= 0) continue;
+      this.ctx.save();
+      this.ctx.translate(f.x, f.y);
+      this.ctx.rotate(f.rotation);
+      this.ctx.globalAlpha = f.alpha;
+
+      this.ctx.fillStyle = f.color;
+      this.ctx.fillRect(-f.w / 2, -f.h / 2, f.w, f.h);
+
+      this.ctx.strokeStyle = '#ffffff';
+      this.ctx.lineWidth = 1.2;
+      this.ctx.strokeRect(-f.w / 2, -f.h / 2, f.w, f.h);
+      this.ctx.restore();
+    }
+
+    // 5. Render Smoke Puffs
+    for (const sm of anim.smokeParticles) {
+      if (sm.alpha <= 0) continue;
+      this.ctx.save();
+      this.ctx.fillStyle = `${sm.color} ${sm.alpha * 0.6})`;
+      this.ctx.beginPath();
+      this.ctx.arc(sm.x, sm.y, sm.size, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.restore();
+    }
+
+    // 6. Render Sparks
+    for (const sp of anim.sparks) {
+      if (sp.alpha <= 0) continue;
+      this.ctx.save();
+      this.ctx.globalAlpha = sp.alpha;
+      this.ctx.fillStyle = sp.color;
+      this.ctx.shadowColor = sp.color;
+      this.ctx.shadowBlur = 6;
+      this.ctx.fillRect(sp.x - sp.size / 2, sp.y - sp.size / 2, sp.size, sp.size);
+      this.ctx.restore();
+    }
+
+    // 7. Render Shockwaves
+    for (const sw of anim.shockwaves) {
+      if (sw.alpha <= 0) continue;
+      this.ctx.save();
+      this.ctx.globalAlpha = sw.alpha;
+      this.ctx.strokeStyle = sw.color;
+      this.ctx.shadowColor = sw.color;
+      this.ctx.shadowBlur = 10;
+      this.ctx.lineWidth = sw.lineWidth;
+      this.ctx.beginPath();
+      this.ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * Finalizes Game Over presentation after death animation concludes
+   */
+  async handleDeath() {
+    if (this.deathAnimation.hasSubmittedScore) return;
+    this.deathAnimation.hasSubmittedScore = true;
+
+    const finalScore = this.finalScore !== undefined ? this.finalScore : Math.floor(this.score);
+    const survivalTime = this.finalSurvivalTime !== undefined ? this.finalSurvivalTime : this.survivalTime;
     const pbBefore = storage.getBestScore();
-    const result = await leaderboard.submitScore(finalScore, this.survivalTime);
+    const result = await leaderboard.submitScore(finalScore, survivalTime);
     const totalAttempts = storage.getAttempts();
 
     if (result.isNewPB) {
@@ -778,7 +1452,7 @@ class GameEngine {
       score: finalScore,
       personalBest: pbBefore,
       isNewPB: result.isNewPB,
-      survivalTime: this.survivalTime,
+      survivalTime: survivalTime,
       obstacleIndex: this.obstacleCounter,
       killerType: this.lastKillerType,
       missileVariant: this.lastMissileVariant,
@@ -1051,12 +1725,21 @@ class GameEngine {
       const ph = this.player.h - CONFIG.PLAYER.HITBOX_PADDING * 2;
 
       if (px < mx + mw && px + pw > mx && py < my + mh && py + ph > my) {
-        this.lastKillerType = 'interceptor-missile';
-        this.lastMissileVariant = m.type;
-        this.explodeMissile(m);
-        this.missiles.splice(i, 1);
-        this.setState(GameState.DEAD);
-        return;
+        if (this.state === GameState.PLAYING) {
+          const impactX = (mx + mw / 2 + px + pw / 2) / 2;
+          const impactY = (my + mh / 2 + py + ph / 2) / 2;
+          this.explodeMissile(m);
+          this.missiles.splice(i, 1);
+          this.triggerDeath({
+            cause: 'missile',
+            killerType: 'interceptor-missile',
+            obstacleType: 'missile',
+            missileVariant: m.type,
+            impactX,
+            impactY
+          });
+          return;
+        }
       }
 
       // --- 2. Missile vs World (Emergent Obstacle Demolition) ---
@@ -1304,6 +1987,8 @@ class GameEngine {
   }
 
   checkCollisions() {
+    if (this.state !== GameState.PLAYING) return false;
+
     const pad = CONFIG.PLAYER.HITBOX_PADDING;
     const px = this.player.x + pad;
     const py = this.player.y + pad;
@@ -1328,8 +2013,31 @@ class GameEngine {
       const oh = obs.h - (obsPadY * 2);
 
       if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
-        this.lastKillerType = obs.parentPatternType || 'single-spike';
-        this.setState(GameState.DEAD);
+        let cause = 'spike';
+        let impactX = this.player.x + this.player.w * 0.7;
+        let impactY = this.player.y + this.player.h;
+
+        if (obs.type === 'energy_gate') {
+          cause = 'energy';
+          impactX = this.player.x + this.player.w;
+          impactY = this.player.y + this.player.h * 0.5;
+        } else if (obs.type === 'floating_bar' || obs.type === 'floating_cross') {
+          cause = 'floating';
+          impactX = this.player.x + this.player.w * 0.5;
+          impactY = this.player.y; // Top impact: Visually emphasizes failure to squash!
+        } else if (obs.type === 'block') {
+          cause = 'block';
+          impactX = this.player.x + this.player.w;
+          impactY = this.player.y + this.player.h * 0.5;
+        }
+
+        this.triggerDeath({
+          cause,
+          killerType: obs.parentPatternType || 'single-spike',
+          obstacleType: obs.type,
+          impactX,
+          impactY
+        });
         return true;
       }
     }
@@ -1447,6 +2155,12 @@ class GameEngine {
 
     if (this.state === GameState.TUTORIAL) {
       this.updateTutorial(dt);
+      return;
+    }
+
+    if (this.state === GameState.DYING) {
+      this.updateDeathAnimation(dt);
+      this.updateParticles(dt);
       return;
     }
 
@@ -1642,6 +2356,30 @@ class GameEngine {
       return;
     }
 
+    // Camera Zoom emphasis during cinematic DYING state
+    if (this.state === GameState.DYING && this.deathAnimation && this.deathAnimation.active) {
+      const isReduced = typeof window !== 'undefined' && 
+        window.matchMedia && 
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!isReduced) {
+        const anim = this.deathAnimation;
+        const progress = Math.min(1, anim.timer / anim.duration);
+        let zoom = 1.0;
+        if (anim.cause === 'missile') {
+          zoom = 1.0 + Math.sin(progress * Math.PI) * 0.035;
+        } else {
+          zoom = 1.0 + Math.sin(Math.min(1, progress * 1.5) * Math.PI * 0.5) * 0.025;
+        }
+        if (zoom !== 1.0) {
+          const cx = anim.playerX + anim.playerW / 2;
+          const cy = anim.playerY + anim.playerH / 2;
+          this.ctx.translate(cx, cy);
+          this.ctx.scale(zoom, zoom);
+          this.ctx.translate(-cx, -cy);
+        }
+      }
+    }
+
     // 3. Normal Star Backdrop
     this.render2DStars();
 
@@ -1649,7 +2387,7 @@ class GameEngine {
     this.renderGround();
 
     // 5. Obstacles
-    if (this.state === GameState.PLAYING || this.state === GameState.DEAD || this.state === GameState.PAUSED) {
+    if (this.state === GameState.PLAYING || this.state === GameState.DYING || this.state === GameState.DEAD || this.state === GameState.PAUSED) {
       this.renderObstacles();
       this.renderInterceptor();
       this.renderMissiles();
@@ -1659,8 +2397,10 @@ class GameEngine {
     // 6. Particles
     this.renderParticles();
 
-    // 7. Player Cube
-    if (this.state !== GameState.DEAD) {
+    // 7. Player Cube or Death Animation
+    if (this.state === GameState.DYING) {
+      this.renderDeathAnimation();
+    } else if (this.state !== GameState.DEAD) {
       this.renderPlayer();
     }
 
@@ -2749,7 +3489,10 @@ class GameEngine {
   }
 }
 
-// Instantiate engine when DOM is ready
-window.addEventListener('DOMContentLoaded', () => {
-  window.blockDash = new GameEngine();
-});
+// Instantiate engine when DOM is ready in browser
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    window.blockDash = new GameEngine();
+  });
+}
+

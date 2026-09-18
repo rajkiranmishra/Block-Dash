@@ -557,49 +557,181 @@ class SoundEngine {
   }
 
   playDeath() {
+    this.playPhysicalImpactCrack(false);
+  }
+
+  /**
+   * Physical Obstacle Death: Impact Thud -> Crack Snap -> Shatter Crumble
+   */
+  playPhysicalImpactCrack(isHeavy = false) {
     if (this.isMuted || !this.ctx) return;
     this.resume();
 
     const now = this.ctx.currentTime;
 
-    const bufferSize = this.ctx.sampleRate * 0.35;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    // 1. Heavy Impact Thud
+    const thudOsc = this.ctx.createOscillator();
+    const thudGain = this.ctx.createGain();
+    thudOsc.type = isHeavy ? 'triangle' : 'sine';
+    const startFreq = isHeavy ? 180 : 240;
+    thudOsc.frequency.setValueAtTime(startFreq, now);
+    thudOsc.frequency.exponentialRampToValueAtTime(35, now + 0.18);
 
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    thudGain.gain.setValueAtTime((isHeavy ? 0.5 : 0.4) * CONFIG.AUDIO.SFX_VOLUME, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
-    filter.frequency.exponentialRampToValueAtTime(100, now + 0.35);
+    thudOsc.connect(thudGain);
+    thudGain.connect(this.sfxGain);
+    thudOsc.start(now);
+    thudOsc.stop(now + 0.22);
 
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.35 * CONFIG.AUDIO.SFX_VOLUME, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    // 2. Sharp Crack Snap (Highpass Noise Burst)
+    const crackSize = Math.floor(this.ctx.sampleRate * 0.12);
+    const crackBuffer = this.ctx.createBuffer(1, crackSize, this.ctx.sampleRate);
+    const crackData = crackBuffer.getChannelData(0);
+    for (let i = 0; i < crackSize; i++) crackData[i] = Math.random() * 2 - 1;
 
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.sfxGain);
+    const crackSource = this.ctx.createBufferSource();
+    crackSource.buffer = crackBuffer;
 
-    noise.start(now);
-    noise.stop(now + 0.36);
+    const crackFilter = this.ctx.createBiquadFilter();
+    crackFilter.type = 'highpass';
+    crackFilter.frequency.setValueAtTime(isHeavy ? 1800 : 2600, now + 0.04);
+    crackFilter.Q.setValueAtTime(3.5, now);
 
-    const osc = this.ctx.createOscillator();
-    const oscGain = this.ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(260, now);
-    osc.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+    const crackGain = this.ctx.createGain();
+    crackGain.gain.setValueAtTime(0.001, now);
+    crackGain.gain.setValueAtTime(0.45 * CONFIG.AUDIO.SFX_VOLUME, now + 0.04);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
 
-    oscGain.gain.setValueAtTime(0.25 * CONFIG.AUDIO.SFX_VOLUME, now);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    crackSource.connect(crackFilter);
+    crackFilter.connect(crackGain);
+    crackGain.connect(this.sfxGain);
+    crackSource.start(now + 0.04);
+    crackSource.stop(now + 0.18);
 
-    osc.connect(oscGain);
-    oscGain.connect(this.sfxGain);
+    // 3. Shatter & Crumble Noise Tail
+    const crumbleSize = Math.floor(this.ctx.sampleRate * 0.4);
+    const crumbleBuffer = this.ctx.createBuffer(1, crumbleSize, this.ctx.sampleRate);
+    const crumbleData = crumbleBuffer.getChannelData(0);
+    for (let i = 0; i < crumbleSize; i++) crumbleData[i] = Math.random() * 2 - 1;
 
-    osc.start(now);
-    osc.stop(now + 0.26);
+    const crumbleSource = this.ctx.createBufferSource();
+    crumbleSource.buffer = crumbleBuffer;
+
+    const crumbleFilter = this.ctx.createBiquadFilter();
+    crumbleFilter.type = 'lowpass';
+    crumbleFilter.frequency.setValueAtTime(900, now + 0.12);
+    crumbleFilter.frequency.exponentialRampToValueAtTime(80, now + 0.48);
+
+    const crumbleGain = this.ctx.createGain();
+    crumbleGain.gain.setValueAtTime(0.001, now);
+    crumbleGain.gain.setValueAtTime(0.35 * CONFIG.AUDIO.SFX_VOLUME, now + 0.12);
+    crumbleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+    crumbleSource.connect(crumbleFilter);
+    crumbleFilter.connect(crumbleGain);
+    crumbleGain.connect(this.sfxGain);
+    crumbleSource.start(now + 0.12);
+    crumbleSource.stop(now + 0.52);
+  }
+
+  /**
+   * Energy Hazard Death: High-Voltage Zap -> Glitch Disintegration
+   */
+  playEnergyDeath() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+
+    const now = this.ctx.currentTime;
+
+    // 1. High Frequency Electrical Zap (Descending FM Sweep)
+    const zapOsc = this.ctx.createOscillator();
+    const zapGain = this.ctx.createGain();
+    zapOsc.type = 'sawtooth';
+    zapOsc.frequency.setValueAtTime(1400, now);
+    zapOsc.frequency.exponentialRampToValueAtTime(80, now + 0.32);
+
+    const zapFilter = this.ctx.createBiquadFilter();
+    zapFilter.type = 'bandpass';
+    zapFilter.frequency.setValueAtTime(2200, now);
+    zapFilter.frequency.exponentialRampToValueAtTime(400, now + 0.32);
+    zapFilter.Q.setValueAtTime(4.0, now);
+
+    zapGain.gain.setValueAtTime(0.5 * CONFIG.AUDIO.SFX_VOLUME, now);
+    zapGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+    zapOsc.connect(zapFilter);
+    zapFilter.connect(zapGain);
+    zapGain.connect(this.sfxGain);
+    zapOsc.start(now);
+    zapOsc.stop(now + 0.36);
+
+    // 2. Glitch Pulse Arcs
+    const glitchOsc = this.ctx.createOscillator();
+    const glitchGain = this.ctx.createGain();
+    glitchOsc.type = 'square';
+    glitchOsc.frequency.setValueAtTime(220, now);
+    glitchOsc.frequency.setValueAtTime(880, now + 0.08);
+    glitchOsc.frequency.setValueAtTime(330, now + 0.16);
+    glitchOsc.frequency.setValueAtTime(110, now + 0.24);
+
+    glitchGain.gain.setValueAtTime(0.3 * CONFIG.AUDIO.SFX_VOLUME, now);
+    glitchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    glitchOsc.connect(glitchGain);
+    glitchGain.connect(this.sfxGain);
+    glitchOsc.start(now);
+    glitchOsc.stop(now + 0.42);
+  }
+
+  /**
+   * Missile Direct Hit: Massive Sub-Bass Blast & Shatter Crunch
+   */
+  playMissileDirectHit() {
+    if (this.isMuted || !this.ctx) return;
+    this.resume();
+
+    const now = this.ctx.currentTime;
+
+    // 1. Sub-Bass Punch
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(120, now);
+    subOsc.frequency.exponentialRampToValueAtTime(25, now + 0.45);
+
+    subGain.gain.setValueAtTime(0.7 * CONFIG.AUDIO.SFX_VOLUME, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.sfxGain);
+    subOsc.start(now);
+    subOsc.stop(now + 0.52);
+
+    // 2. Dual Noise Blast
+    const blastSize = Math.floor(this.ctx.sampleRate * 0.55);
+    const blastBuffer = this.ctx.createBuffer(1, blastSize, this.ctx.sampleRate);
+    const blastData = blastBuffer.getChannelData(0);
+    for (let i = 0; i < blastSize; i++) blastData[i] = Math.random() * 2 - 1;
+
+    const blastSource = this.ctx.createBufferSource();
+    blastSource.buffer = blastBuffer;
+
+    const blastFilter = this.ctx.createBiquadFilter();
+    blastFilter.type = 'lowpass';
+    blastFilter.frequency.setValueAtTime(2000, now);
+    blastFilter.frequency.exponentialRampToValueAtTime(60, now + 0.55);
+
+    const blastGain = this.ctx.createGain();
+    blastGain.gain.setValueAtTime(0.65 * CONFIG.AUDIO.SFX_VOLUME, now);
+    blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+    blastSource.connect(blastFilter);
+    blastFilter.connect(blastGain);
+    blastGain.connect(this.sfxGain);
+    blastSource.start(now);
+    blastSource.stop(now + 0.58);
   }
 
   playScoreDing() {

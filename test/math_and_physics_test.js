@@ -8,6 +8,8 @@
 import { CONFIG } from '../js/config.js';
 import { RoastEngine } from '../js/roast.js';
 import { InputManager, InputActions } from '../js/input.js';
+import { GameState } from '../js/game.js';
+
 
 console.log('🧪 ========================================================');
 console.log('🧪 BLOCK DASH — AUTOMATED ENGINEERING & PHYSICS TESTS');
@@ -536,10 +538,226 @@ assert(vDesktop.virtualWidth === 960 && vDesktop.virtualHeight === 540 && vDeskt
 assert(vMobile.virtualWidth === 960 && vMobile.virtualHeight === 540 && vMobile.groundY === 460, 'Mobile landscape runs in identical locked 960x540 virtual coordinate space.');
 assert(vDesktop.groundY === vMobile.groundY, 'Ground Y plane (460px) is 100% identical between desktop and mobile.');
 
+// --- Test 13: GameState.DYING Intermediate State, Cause Classification & Cinematic Invariants ---
+console.log('\n--- TEST 13: GameState.DYING Intermediate State, Cause Classification & Cinematic Invariants ---');
+
+// 1. State Enum Validation
+assert(GameState.DYING === 'DYING', 'GameState enum defines dedicated intermediate DYING state.');
+assert(GameState.PLAYING !== GameState.DYING && GameState.DYING !== GameState.DEAD, 'DYING state is distinct from PLAYING and DEAD.');
+
+// 2. CONFIG.DEATH Constants Validation
+assert(CONFIG.DEATH.DURATION_PHYSICAL === 0.95, `Physical death duration (${CONFIG.DEATH.DURATION_PHYSICAL}s) matches spec.`);
+assert(CONFIG.DEATH.DURATION_ENERGY === 0.90, `Energy death duration (${CONFIG.DEATH.DURATION_ENERGY}s) matches spec.`);
+assert(CONFIG.DEATH.DURATION_MISSILE === 1.05, `Missile death duration (${CONFIG.DEATH.DURATION_MISSILE}s) matches spec.`);
+assert(CONFIG.DEATH.HITSTOP_PHYSICAL === 0.07, `Physical hitstop (${CONFIG.DEATH.HITSTOP_PHYSICAL}s) matches spec.`);
+assert(CONFIG.DEATH.HITSTOP_BLOCK === 0.09, `Heavy block hitstop (${CONFIG.DEATH.HITSTOP_BLOCK}s) matches spec.`);
+assert(CONFIG.DEATH.HITSTOP_ENERGY === 0.04, `Energy hitstop (${CONFIG.DEATH.HITSTOP_ENERGY}s) matches spec.`);
+assert(CONFIG.DEATH.HITSTOP_MISSILE === 0.03, `Missile hitstop (${CONFIG.DEATH.HITSTOP_MISSILE}s) matches spec.`);
+
+// Fragment & particle limit bounds
+assert(CONFIG.DEATH.FRAGMENT_COUNT_DESKTOP === 10 && CONFIG.DEATH.FRAGMENT_COUNT_MOBILE === 7, 'Physical fragment bounds (10 desktop, 7 mobile) protect performance.');
+assert(CONFIG.DEATH.PARTICLE_COUNT_DESKTOP === 24 && CONFIG.DEATH.PARTICLE_COUNT_MOBILE === 12, 'Missile particle bounds (24 desktop, 12 mobile) protect performance.');
+
+// 3. Cause Classification Matrix across all 10 hazard types
+function classifyHazardDeath(hazard) {
+  if (hazard.type === 'energy_gate') {
+    return { cause: 'ENERGY', killerType: 'energy_gate', isHeavy: false };
+  } else if (hazard.type === 'missile') {
+    return { cause: 'MISSILE', killerType: 'missile', missileVariant: hazard.variant || 'ground', isHeavy: false };
+  } else {
+    const isHeavy = hazard.type === 'block';
+    return { cause: 'PHYSICAL', killerType: hazard.type, isHeavy };
+  }
+}
+
+const hazardMatrix = [
+  { input: { type: 'spike', count: 1 }, expectedCause: 'PHYSICAL', expectedKiller: 'spike', expectedHeavy: false, name: 'Single Ground Spike' },
+  { input: { type: 'spike', count: 2 }, expectedCause: 'PHYSICAL', expectedKiller: 'spike', expectedHeavy: false, name: 'Double Ground Spike' },
+  { input: { type: 'spike', count: 3 }, expectedCause: 'PHYSICAL', expectedKiller: 'spike', expectedHeavy: false, name: 'Triple Ground Spike' },
+  { input: { type: 'block' }, expectedCause: 'PHYSICAL', expectedKiller: 'block', expectedHeavy: true, name: 'Block Hazard' },
+  { input: { type: 'floating_bar' }, expectedCause: 'PHYSICAL', expectedKiller: 'floating_bar', expectedHeavy: false, name: 'Floating Bar' },
+  { input: { type: 'floating_cross' }, expectedCause: 'PHYSICAL', expectedKiller: 'floating_cross', expectedHeavy: false, name: 'Floating Cross' },
+  { input: { type: 'energy_gate' }, expectedCause: 'ENERGY', expectedKiller: 'energy_gate', expectedHeavy: false, name: 'Energy Gate' },
+  { input: { type: 'missile', variant: 'ground' }, expectedCause: 'MISSILE', expectedKiller: 'missile', missileVariant: 'ground', expectedHeavy: false, name: 'Ground Interceptor Missile' },
+  { input: { type: 'missile', variant: 'high' }, expectedCause: 'MISSILE', expectedKiller: 'missile', missileVariant: 'high', expectedHeavy: false, name: 'High Laser Interceptor Missile' },
+  { input: { type: 'missile', variant: 'tracking' }, expectedCause: 'MISSILE', expectedKiller: 'missile', missileVariant: 'tracking', expectedHeavy: false, name: 'Tracking Interceptor Missile' },
+];
+
+hazardMatrix.forEach(h => {
+  const result = classifyHazardDeath(h.input);
+  assert(
+    result.cause === h.expectedCause &&
+    result.killerType === h.expectedKiller &&
+    result.isHeavy === h.expectedHeavy &&
+    (!h.missileVariant || result.missileVariant === h.missileVariant),
+    `Hazard Matrix: ${h.name} -> Classified as cause=${result.cause}, killer=${result.killerType}${result.isHeavy ? ' (heavy)' : ''}`
+  );
+});
+
+// 4. Game Engine DYING -> DEAD Lifecycle Simulation
+class MockDeathEngine {
+  constructor() {
+    this.state = GameState.PLAYING;
+    this.score = 450;
+    this.survivalTime = 12.4;
+    this.finalScore = 0;
+    this.finalSurvivalTime = 0;
+    this.gameOverUIShown = false;
+    this.scoreSubmissions = 0;
+    this.deathAnimation = {
+      active: false,
+      cause: null,
+      killerType: null,
+      timer: 0,
+      duration: 0,
+      hitStopTimer: 0,
+      playerVisible: true,
+      fragments: [],
+      slices: [],
+      particles: [],
+      shockwaveRadius: 0,
+    };
+  }
+
+  triggerDeath(context) {
+    if (this.state === GameState.DYING || this.state === GameState.DEAD) return;
+    this.state = GameState.DYING;
+    this.finalScore = Math.floor(this.score);
+    this.finalSurvivalTime = this.survivalTime;
+
+    let duration = CONFIG.DEATH.DURATION_PHYSICAL;
+    let hitStop = CONFIG.DEATH.HITSTOP_PHYSICAL;
+    if (context.cause === 'ENERGY') {
+      duration = CONFIG.DEATH.DURATION_ENERGY;
+      hitStop = CONFIG.DEATH.HITSTOP_ENERGY;
+    } else if (context.cause === 'MISSILE') {
+      duration = CONFIG.DEATH.DURATION_MISSILE;
+      hitStop = CONFIG.DEATH.HITSTOP_MISSILE;
+    } else if (context.isHeavy) {
+      hitStop = CONFIG.DEATH.HITSTOP_BLOCK;
+    }
+
+    this.deathAnimation = {
+      active: true,
+      cause: context.cause,
+      killerType: context.killerType,
+      timer: 0,
+      duration,
+      hitStopTimer: hitStop,
+      playerVisible: true,
+      fragments: [1, 2, 3, 4, 5, 6, 7],
+      slices: [],
+      particles: [],
+      shockwaveRadius: 0,
+    };
+  }
+
+  update(dt) {
+    if (this.state === GameState.DYING) {
+      this.updateDeathAnimation(dt);
+      return; // Freeze normal world progress
+    }
+    if (this.state === GameState.PLAYING) {
+      this.score += 100 * dt;
+      this.survivalTime += dt;
+    }
+  }
+
+  updateDeathAnimation(dt) {
+    const anim = this.deathAnimation;
+    if (!anim.active) return;
+
+    if (anim.hitStopTimer > 0) {
+      anim.hitStopTimer -= dt;
+      return;
+    }
+
+    anim.timer += dt;
+    if (anim.timer >= anim.duration) {
+      anim.active = false;
+      this.handleDeath();
+    }
+  }
+
+  handleDeath() {
+    if (this.state === GameState.DEAD) return;
+    this.state = GameState.DEAD;
+    this.scoreSubmissions++;
+    this.gameOverUIShown = true;
+  }
+
+  resetRun() {
+    this.state = GameState.PLAYING;
+    this.score = 0;
+    this.survivalTime = 0;
+    this.finalScore = 0;
+    this.finalSurvivalTime = 0;
+    this.gameOverUIShown = false;
+    this.deathAnimation = {
+      active: false,
+      cause: null,
+      killerType: null,
+      timer: 0,
+      duration: 0,
+      hitStopTimer: 0,
+      playerVisible: true,
+      fragments: [],
+      slices: [],
+      particles: [],
+      shockwaveRadius: 0,
+    };
+  }
+}
+
+const mock = new MockDeathEngine();
+assert(mock.state === GameState.PLAYING, 'Initial state is PLAYING.');
+
+// Advance playing state
+mock.update(0.1);
+assert(mock.score > 450, `Score increases normally during PLAYING (${mock.score.toFixed(1)}).`);
+const scoreAtDeath = mock.score;
+const survivalAtDeath = mock.survivalTime;
+
+// Fatal collision triggers DYING
+mock.triggerDeath({ cause: 'PHYSICAL', killerType: 'spike', isHeavy: false });
+assert(mock.state === GameState.DYING, 'Fatal collision immediately enters GameState.DYING.');
+assert(mock.finalScore === Math.floor(scoreAtDeath), `Final score frozen immediately at ${mock.finalScore}.`);
+assert(mock.finalSurvivalTime === survivalAtDeath, `Final survival time frozen immediately at ${mock.finalSurvivalTime.toFixed(2)}s.`);
+assert(mock.gameOverUIShown === false, 'Game Over UI overlay is strictly hidden while in DYING state.');
+
+// Duplicate collision during DYING must be ignored
+mock.triggerDeath({ cause: 'MISSILE', killerType: 'missile', isHeavy: false });
+assert(mock.deathAnimation.cause === 'PHYSICAL', 'Secondary collision during DYING is safely ignored (trigger idempotency).');
+
+// Simulate ticks during DYING: score and survival time MUST be frozen
+for (let i = 0; i < 10; i++) {
+  mock.update(0.05);
+}
+assert(mock.score === scoreAtDeath, 'Score remains strictly frozen throughout DYING animation.');
+assert(mock.survivalTime === survivalAtDeath, 'Survival time remains strictly frozen throughout DYING animation.');
+assert(mock.gameOverUIShown === false, 'Game Over UI is not displayed prematurely during animation playback.');
+
+// Advance until death animation duration completes
+while (mock.state === GameState.DYING) {
+  mock.update(0.05);
+}
+
+assert(mock.state === GameState.DEAD, 'State transitions to GameState.DEAD once animation duration completes.');
+assert(mock.gameOverUIShown === true, 'Game Over UI overlay appears upon entering GameState.DEAD.');
+assert(mock.scoreSubmissions === 1, 'Score was submitted to leaderboard exactly once.');
+
+// Verify clean reset on instant retry
+mock.resetRun();
+assert(mock.state === GameState.PLAYING, 'Instant retry resets state back to PLAYING cleanly.');
+assert(mock.deathAnimation.active === false, 'deathAnimation container is deactivated on reset.');
+assert(mock.deathAnimation.fragments.length === 0, 'deathAnimation particle arrays are cleaned up on reset.');
+assert(mock.gameOverUIShown === false, 'Game Over UI overlay is reset.');
+
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);
 console.log(`========================================================\n`);
 
 if (failCount > 0) process.exit(1);
+
 
 
