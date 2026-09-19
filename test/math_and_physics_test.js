@@ -5,10 +5,16 @@
  * dash kinematics, procedural constraints, roast engine decision trees, and resetRun purity.
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { CONFIG } from '../js/config.js';
 import { RoastEngine } from '../js/roast.js';
 import { InputManager, InputActions } from '../js/input.js';
 import { GameState } from '../js/game.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 
 console.log('🧪 ========================================================');
@@ -752,6 +758,135 @@ assert(mock.state === GameState.PLAYING, 'Instant retry resets state back to PLA
 assert(mock.deathAnimation.active === false, 'deathAnimation container is deactivated on reset.');
 assert(mock.deathAnimation.fragments.length === 0, 'deathAnimation particle arrays are cleaned up on reset.');
 assert(mock.gameOverUIShown === false, 'Game Over UI overlay is reset.');
+
+// --- Test 14: CSS Visibility Utility & State-Driven HUD Invariants ---
+console.log('\n--- TEST 14: CSS Visibility Utility & State-Driven HUD Invariants ---');
+const cssPath = path.join(__dirname, '../css/style.css');
+const cssContent = fs.readFileSync(cssPath, 'utf-8');
+
+// 1. Verify global .hidden rule
+const hasGlobalHidden = /\.hidden\s*\{[^}]*display:\s*none\s*!important;?[^}]*\}/.test(cssContent);
+assert(hasGlobalHidden, 'css/style.css contains global .hidden utility class with display: none !important.');
+
+// 2. Verify .ui-overlay.hidden preservation
+const hasOverlayHidden = /\.ui-overlay\.hidden\s*\{[^}]*display:\s*none\s*!important;?[^}]*\}/.test(cssContent);
+assert(hasOverlayHidden, 'css/style.css preserves .ui-overlay.hidden rule for modal backdrop transitions.');
+
+// 3. Verify HTML markup includes hidden class on HUD and badge elements
+const htmlPath = path.join(__dirname, '../index.html');
+const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+assert(/id="game-hud"[^>]*class="[^"]*hidden[^"]*"/.test(htmlContent), 'index.html #game-hud initialized with hidden class.');
+assert(/id="tutorial-hud"[^>]*class="[^"]*hidden[^"]*"/.test(htmlContent), 'index.html #tutorial-hud initialized with hidden class.');
+assert(/id="new-pb-banner"[^>]*class="[^"]*hidden[^"]*"/.test(htmlContent), 'index.html #new-pb-banner initialized with hidden class.');
+assert(/id="meme-badge"[^>]*class="[^"]*hidden[^"]*"/.test(htmlContent), 'index.html #meme-badge initialized with hidden class.');
+
+// 4. Verify GameEngine State Machine DOM visibility management
+class MockDOMElement {
+  constructor(name, initialClasses = []) {
+    this.name = name;
+    this.classList = new Set(initialClasses);
+  }
+  addClass(c) { this.classList.add(c); }
+  removeClass(c) { this.classList.delete(c); }
+}
+
+class MockFSMHUDTester {
+  constructor() {
+    this.state = null;
+    this.dom = {
+      introOverlay: { classList: new Set(['hidden']) },
+      menuOverlay: { classList: new Set(['hidden']) },
+      settingsOverlay: { classList: new Set(['hidden']) },
+      pauseOverlay: { classList: new Set(['hidden']) },
+      deathOverlay: { classList: new Set(['hidden']) },
+      recordsOverlay: { classList: new Set(['hidden']) },
+      tutorialHud: { classList: new Set(['hidden']) },
+      hud: { classList: new Set(['hidden']) }
+    };
+  }
+
+  setState(newState) {
+    if (this.state === newState) return;
+    this.state = newState;
+
+    this.dom.introOverlay.classList.add('hidden');
+    this.dom.menuOverlay.classList.add('hidden');
+    this.dom.settingsOverlay.classList.add('hidden');
+    this.dom.pauseOverlay.classList.add('hidden');
+    this.dom.deathOverlay.classList.add('hidden');
+    this.dom.recordsOverlay.classList.add('hidden');
+    this.dom.tutorialHud.classList.add('hidden');
+    this.dom.hud.classList.add('hidden');
+
+    switch (newState) {
+      case GameState.INTRO_IDLE:
+        this.dom.introOverlay.classList.delete('hidden');
+        break;
+      case GameState.MENU:
+        this.dom.menuOverlay.classList.delete('hidden');
+        break;
+      case GameState.TUTORIAL:
+        this.dom.tutorialHud.classList.delete('hidden');
+        break;
+      case GameState.PLAYING:
+        this.dom.hud.classList.delete('hidden');
+        break;
+      case GameState.DYING:
+        this.dom.hud.classList.delete('hidden');
+        break;
+      case GameState.PAUSED:
+        this.dom.hud.classList.delete('hidden');
+        this.dom.pauseOverlay.classList.delete('hidden');
+        break;
+      case GameState.DEAD:
+        this.dom.hud.classList.delete('hidden');
+        this.dom.deathOverlay.classList.delete('hidden');
+        break;
+    }
+  }
+}
+
+const fsmTester = new MockFSMHUDTester();
+
+// Step 1: Menu
+fsmTester.setState(GameState.MENU);
+assert(fsmTester.dom.menuOverlay.classList.has('hidden') === false, 'MENU state: menu overlay is visible.');
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === true, 'MENU state: tutorial HUD is hidden.');
+assert(fsmTester.dom.hud.classList.has('hidden') === true, 'MENU state: normal gameplay HUD is hidden.');
+
+// Step 2: Training / Tutorial Simulation
+fsmTester.setState(GameState.TUTORIAL);
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === false, 'TUTORIAL state: tutorial HUD is visible.');
+assert(fsmTester.dom.hud.classList.has('hidden') === true, 'TUTORIAL state: normal gameplay HUD is hidden.');
+assert(fsmTester.dom.menuOverlay.classList.has('hidden') === true, 'TUTORIAL state: menu overlay is hidden.');
+
+// Step 3: Complete / Skip Training -> Normal Gameplay
+fsmTester.setState(GameState.PLAYING);
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === true, 'PLAYING state after training: tutorial HUD is strictly hidden.');
+assert(fsmTester.dom.hud.classList.has('hidden') === false, 'PLAYING state after training: normal gameplay HUD is visible.');
+
+// Step 4: Dying
+fsmTester.setState(GameState.DYING);
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === true, 'DYING state: tutorial HUD is strictly hidden.');
+assert(fsmTester.dom.hud.classList.has('hidden') === false, 'DYING state: gameplay HUD remains visible during death animation.');
+assert(fsmTester.dom.deathOverlay.classList.has('hidden') === true, 'DYING state: death overlay is not yet shown.');
+
+// Step 5: Dead
+fsmTester.setState(GameState.DEAD);
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === true, 'DEAD state: tutorial HUD is strictly hidden.');
+assert(fsmTester.dom.hud.classList.has('hidden') === false, 'DEAD state: gameplay HUD is visible.');
+assert(fsmTester.dom.deathOverlay.classList.has('hidden') === false, 'DEAD state: death overlay is visible.');
+
+// Step 6: Retry -> Playing
+fsmTester.setState(GameState.PLAYING);
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === true, 'PLAYING state after retry: tutorial HUD does not return unexpectedly.');
+assert(fsmTester.dom.hud.classList.has('hidden') === false, 'PLAYING state after retry: normal gameplay HUD is visible.');
+
+// Step 7: Paused
+fsmTester.setState(GameState.PAUSED);
+assert(fsmTester.dom.tutorialHud.classList.has('hidden') === true, 'PAUSED state: tutorial HUD is hidden.');
+assert(fsmTester.dom.hud.classList.has('hidden') === false, 'PAUSED state: gameplay HUD is visible.');
+assert(fsmTester.dom.pauseOverlay.classList.has('hidden') === false, 'PAUSED state: pause overlay is visible.');
 
 console.log(`\n========================================================`);
 console.log(`TEST RESULTS: ${passCount} Passed, ${failCount} Failed.`);

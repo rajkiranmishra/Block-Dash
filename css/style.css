@@ -52,6 +52,11 @@ html, body {
   align-items: center;
 }
 
+/* --- Global Utilities --- */
+.hidden {
+  display: none !important;
+}
+
 /* --- Visibility by Interface Mode --- */
 .desktop-ui .desktop-only {
   display: flex !important;
